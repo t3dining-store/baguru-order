@@ -34,8 +34,9 @@ const who = o => o.name ? `${o.name} 様` : 'お名前なし';   // 店頭の注
 // ★お店のタブレットのホーム画面から開いたときは出さない
 // バグる Staff から開いたときは、アドレスに hub=staff の印が付く。控えが消えた・Owner のものになっていても、印を見て必ず Staff に戻す
 // （2026-11-02 ko-dai さんの報告。バグる Owner のセッションに頼まれた）。★逆向き（印が無ければ Owner）は入れない。印の無い古いアドレスが開いたままの端末で、Staff の社員が Owner に飛ぶ
-const OWNER_URL = 'https://t3dining.github.io/baguru-owner/';
-const STAFF_URL = 'https://t3dining.github.io/baguru-staff/';
+// お店用アプリの引っ越し（../お店用アプリの引っ越し.md）で、Owner・Staff も t3dining-store に移った（2026-11-05。ko-dai さんの「案1と案4で進める」）
+const OWNER_URL = 'https://t3dining-store.github.io/baguru-owner/';
+const STAFF_URL = 'https://t3dining-store.github.io/baguru-staff/';
 const FROM_OWNER = (() => {
   const mark = /[?&]from=owner\b/.test(location.search);
   try {

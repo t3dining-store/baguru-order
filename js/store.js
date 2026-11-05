@@ -449,7 +449,7 @@ function card(o) {
     isRequest(o) ? `<span class="c-kind k-${o.kind}">${KIND[o.kind]}・${o.meals || 0}食</span>` : '',
     isRequest(o) && needsFee(o) && o.fee == null ? '<span class="c-kind k-ask">要相談・配達料</span>' : '',
     cookNow.has(o.id) ? '<span class="c-kind k-cook">🔔 調理開始</span>' : '',
-    o.asap ? '<span class="c-kind k-asap">できしだい</span>' : '',
+    o.asap ? '<span class="c-kind k-asap">今から受け取る</span>' : '',   // 前は「できしだい」（2026-11-06 ko-dai さんの指示で、お客さまのアプリ・予約ボードとそろえた）
     o.route && o.route !== 'アプリ' ? `<span class="c-kind k-route">${esc(o.route)}</span>` : '',   // 予約注文（いまは「予約」。前の注文は「電話」「店頭」）
   ].join('');
   const pay = o.kind !== 'delivery' ? '（店頭で支払い）'

@@ -44,11 +44,11 @@
   <label class="s-accept"><input type="checkbox" id="accepting"><span class="sw"></span><span id="acceptText"></span></label>
   <button id="sound" class="s-btn"></button>
   <!-- 即予約（15分以内に来店する、すぐ確定のネット予約）が入った知らせ（2026-11-06 ko-dai さんの指示。予約ボードの帯と同じ色）。
-       上の帯の中に置くので、下へ動かしても見える。「見た」を押すまで出して音を鳴らす。どこか1台で押せば、予約ボードも含めた全部の端末で止まる。文は js/store.js の paintQuick が書く -->
+       上の帯の中に置くので、下へ動かしても見える。「確認」を押すまで出して、3秒ごとに音を鳴らし続ける（2026-11-06 ko-dai さんの指示で「見た」から名前を変えた）。どこか1台で押せば、予約ボードも含めた全部の端末で止まる。文は js/store.js の paintQuick が書く -->
   <div id="quickBar" class="quick-bar" role="alert" hidden>
     <span class="qb-mark" aria-hidden="true">即</span>
     <span class="qb-text"><b id="quickText"></b><small>確定済みのネット予約です。席・来店・取り消しは予約ボードで</small></span>
-    <button type="button" id="quickOk">見た</button>
+    <button type="button" id="quickOk">確認</button>
   </div>
 </header>
 <!-- 試作か、受け口から注文を読めているか（読めないときは赤くなる）。文は js/store.js の paintNet が書く -->
@@ -164,6 +164,6 @@
 <script src="https://t3dining.github.io/baguru-app/js/content.js?v=86d4c182"></script>
 <!-- 受け口とのやりとり（公式アプリと同じもの。切り替え ORDERS_ONLINE・受け口の場所・送り方）。公式アプリのセッションの持ち物 -->
 <script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=ca3999db"></script>
-<script src="js/store.js?v=9f15dedc"></script>
+<script src="js/store.js?v=9fcee451"></script>
 </body>
 </html>

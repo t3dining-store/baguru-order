@@ -58,9 +58,7 @@ const COOK_URL = 'snd/cook.wav';     // 調理を始める時間の音（2.7秒�
 const COOK_RINGS = 3;                // 調理を始める時間の音を、RING_EVERY の間隔で何回鳴らすか
 const CANCEL_URL = 'snd/cancel.wav';   // お客様が注文を取り消したときの音（1.8秒。低いブザーの「ブッ・ブー」を2回。同じ道具で作る）
 const CANCEL_RINGS = 2;                // 取り消しの音を、RING_EVERY の間隔で何回鳴らすか
-const QUICK_URL = 'snd/quick.wav';     // 即予約が入ったときの音（1.9秒。手で振る鐘の「カランカラン」を2回。お店の入口のベルのように。同じ道具で作る。2026-11-06）
-const QUICK_RINGS = 2;                 // 即予約が入ったときに、RING_EVERY の間隔で何回鳴らすか
-const QUICK_EVERY = 20000;             // 「見た」を押すまで、この間隔（ミリ秒）でもう1回鳴らす（予約ボードと同じ20秒）
+const QUICK_URL = 'snd/quick.wav';     // 即予約が入ったときの音（1.9秒。手で振る鐘の「カランカラン」を2回。お店の入口のベルのように。同じ道具で作る。2026-11-06）。「確認」を押すまで RING_EVERY ごとに鳴らし続ける
 const COOK_GLOW = 60000;             // 調理中に移った注文を光らせて「調理開始」の札を付けておく長さ（ミリ秒）
 
 // タブレット（iPad など。画面の短いほうが600以上）は、開いたときから音はオン。「音」のボタンで、そのときだけ止められる。
@@ -143,6 +141,8 @@ function take(r) {
   net.orders = (r.orders || []).map(fromServer);
   net.accepting = r.accepting !== false;
   net.quick = Array.isArray(r.quick) ? r.quick : [];   // 前の版の受け口には quick が無い。そのときは何も出さない
+  const added = quickNew().filter(q => !quickTold.has(q.id));
+  if (added.length) { added.forEach(q => quickTold.add(q.id)); ringNext = 'quick'; ring(false); }   // 新しい即予約は、このあとの render ですぐ鳴る
   checkNew();
 }
 /** 受け口が返した1件を、画面の注文に入れる（無ければ足す） */
@@ -162,7 +162,7 @@ function pull() {
   if (net.loading) return net.loading;
   const gen = net.gen;
   net.loading = staffPost({ action: 'orders' })
-    .then(r => { net.error = ''; net.at = Date.now(); if (gen === net.gen) take(r); sendQuickSeen(); })   // 届かなかった即予約の「見た」は、ここで送り直す
+    .then(r => { net.error = ''; net.at = Date.now(); if (gen === net.gen) take(r); sendQuickSeen(); })   // 届かなかった即予約の「確認」は、ここで送り直す
     .catch(e => { net.error = staffText(e); })
     .then(() => { net.loading = null; render(); });
   return net.loading;
@@ -270,10 +270,8 @@ function loadChime() {
 }
 
 /** 音を1回鳴らす。ふだんは注文の音。buf が読めていないときは、freq の高さの「ピッピッ」 */
-let soundBusyUntil = 0;   // いま鳴らしている音が終わる時刻（即予約の音を、ほかの音に重ねないため）
 function beep(buf = chime, freq = 880) {
   if (!soundOn || !audio) return;
-  soundBusyUntil = Date.now() + (buf ? buf.duration * 1000 : 600);
   if (audio.state !== 'running') audio.resume().catch(() => {});   // タブレットがしばらく裏に回ると止まることがある（iPad は suspended でなく interrupted にもなる）
   if (buf) {
     const s = audio.createBufferSource();
@@ -295,9 +293,21 @@ function beep(buf = chime, freq = 880) {
   });
 }
 
-// 受付待ちがあるあいだは鳴らし続け、なくなったら（受け付けたら）止める
+// 受付待ちの注文・返事をしていない申請・確認していない即予約があるあいだは鳴らし続け、なくなったら（受け付けた・確認した）止める。
+// 即予約の音は、注文の音と同じく RING_EVERY ごと（2026-11-06 ko-dai さんの指示「確認を押すまでずっと鳴り続けるように」）。
+// 両方あるときは交互に鳴らす（どちらも聞こえるように）。新しく入ったほうを先に鳴らす（ringNext）
+let ringNext = '';
+const ringNeeds = () => [...(quickNew().length ? ['quick'] : []), ...(list().some(o => ['new', 'request'].includes(o.status)) ? ['order'] : [])];
+function ringTick() {
+  if (Date.now() < quietUntil) return;   // 取り消しの音の途中
+  const need = ringNeeds();
+  if (!need.length) return;
+  const what = need.includes(ringNext) ? ringNext : need[0];
+  ringNext = need.find(x => x !== what) || what;
+  if (what === 'quick') beep(quickChime, 1568); else beep();
+}
 function ring(on) {
-  if (on && !ringTimer) { beep(); ringTimer = setInterval(() => { if (Date.now() >= quietUntil) beep(); }, RING_EVERY); }
+  if (on && !ringTimer) { ringTick(); ringTimer = setInterval(ringTick, RING_EVERY); }
   if (!on && ringTimer) { clearInterval(ringTimer); ringTimer = null; }
 }
 
@@ -483,7 +493,6 @@ function render() {
   const today = dateKey(new Date());
   checkCook(all);
   ringCancel();
-  ringQuick();
   paintQuick();
   const byTime = (a, b) => a.pickupAt.localeCompare(b.pickupAt);
   for (const col of $$('.col')) {
@@ -509,10 +518,12 @@ function render() {
   $('.s-accept').classList.toggle('off', !accepting);
   // 受付待ちの注文と、返事をしていない申請があるあいだは鳴らし続ける
   const waiting = all.filter(o => ['new', 'request'].includes(o.status)).length;
-  ring(soundOn && waiting > 0);
-  $('#sound').textContent = !soundOn ? '🔕 音：オフ（押すとオン）' : ringTimer ? '🔔 鳴っています（受け付ける・申請に返事をすると止まります）' : '🔔 音：オン';
+  const quickN = quickNew().length;
+  ring(soundOn && (waiting > 0 || quickN > 0));
+  const stops = [waiting > 0 && '受け付ける・申請に返事をする', quickN > 0 && '即予約の「確認」を押す'].filter(Boolean).join('・');
+  $('#sound').textContent = !soundOn ? '🔕 音：オフ（押すとオン）' : ringTimer ? `🔔 鳴っています（${stops}と止まります）` : '🔔 音：オン';
   $('#sound').classList.toggle('on', soundOn);
-  $('#sound').classList.toggle('warn', !soundOn && (waiting > 0 || quickNew().length > 0));
+  $('#sound').classList.toggle('warn', !soundOn && (waiting > 0 || quickN > 0));
   document.title = (waiting ? `（${waiting}）` : '') + 'バグるOrder受付';
   paintNet();
 }
@@ -535,6 +546,7 @@ function checkNew() {
   const added = all.filter(o => !known.has(o.id));
   if (added.length) {
     added.forEach(o => fresh.add(o.id));
+    ringNext = 'order';
     ring(false);   // 一度止めて、このあとの render で鳴らし直す（新しい注文はすぐ鳴る）
     setTimeout(() => { added.forEach(o => fresh.delete(o.id)); render(); }, 8000);
   }
@@ -549,15 +561,14 @@ function checkNew() {
  *  即予約の知らせ（2026-11-06 ko-dai さんの指示「即予約が入ったら受付アプリに通知が入って音がなるように」。予約ボードのセッションに頼まれた）
  *  即予約は、15分以内に来店するお客さまの、すぐ確定するネット予約（../即予約の決めごと.md）。席・来店・取り消しは予約ボードでする。ここは知らせるだけ
  *  ・受け口（2026-11-06a から）の orders の答えの quick（今日の、まだ来ていない即予約。seen 付き）に seen が false のものがあるあいだ、上に帯を出して音を鳴らす
- *  ・「見た」で受け口の quickSeen を送る。どこか1台（予約ボードでも Order受付でも）で押せば、全部の端末で止まる（ko-dai さんが選んだ）。
- *    ほかの端末で押した分は、次に読んだとき（15秒ごと）に消える
- *  ・音は、入ったときに QUICK_RINGS 回、そのあと「見た」を押すまで QUICK_EVERY ごとに1回。受付待ちの注文の音は、そのあいだ休む
+ *  ・「確認」で受け口の quickSeen を送る。どこか1台（予約ボードでも Order受付でも）で押せば、全部の端末で止まる（ko-dai さんが選んだ）。
+ *    ほかの端末で押した分は、次に読んだとき（15秒ごと。返事を待つので20秒ほど）に消える。ボタンの名前は 2026-11-06 に「見た」から「確認」に変えた（ko-dai さんの指示）
+ *  ・音は「確認」を押すまで、注文の音と同じく3秒ごとに鳴らし続ける（2026-11-06 ko-dai さんの指示。上の ring・ringTick。はじめは入ったとき2回・あと20秒ごとだった）
  *  ・前の版の受け口（quick が無い）・試作（ORDERS_ONLINE でない）のときは、何も出さない
  * --------------------------------------------------------------------- */
-const quickMine = new Set();   // この端末で「見た」を押した即予約。受け口に届くまでのあいだ・届かなかったときも、この端末では帯を出さない
-const quickTodo = new Set();   // 受け口にまだ届いていない「見た」（つながらなかったときは、次に読めたときに送り直す）
-const quickTold = new Set();   // 入ったときの音（QUICK_RINGS 回）を鳴らした即予約
-let quickAt = 0;               // 最後に即予約の音を鳴らした時刻
+const quickMine = new Set();   // この端末で「確認」を押した即予約。受け口に届くまでのあいだ・届かなかったときも、この端末では帯を出さず、鳴らさない
+const quickTodo = new Set();   // 受け口にまだ届いていない「確認」（つながらなかったときは、次に読めたときに送り直す）
+const quickTold = new Set();   // 一度でも帯に出した即予約（新しく入ったものを、すぐ鳴らすため）
 let quickSending = false;
 
 const quickNew = () => net.quick.filter(q => q && !q.seen && !quickMine.has(q.id));
@@ -576,24 +587,7 @@ function paintQuick() {
   $('#quickText').textContent = `即予約が入りました：${q.start}までに来店 ${q.people}名 ${quickName(q)}様（${seats}）${n.length > 1 ? ` 他${n.length - 1}件` : ''}`;
 }
 
-/** 即予約の音。いま音を出せない（「画面をタッチ」の前など）・取り消しの音の途中のときは、あとで鳴らす（5秒ごとに見る）。
- *  受付待ちの注文の音が鳴っている途中なら、鳴り終わるのを待ってから鳴らす */
-let quickWait = null;
-function ringQuick() {
-  const n = quickNew();
-  if (!n.length || !soundOn || audio?.state !== 'running' || Date.now() < quietUntil) return;
-  const added = n.filter(q => !quickTold.has(q.id));
-  if (!added.length && Date.now() - quickAt < QUICK_EVERY) return;
-  const busy = soundBusyUntil - Date.now();
-  if (busy > 0) { clearTimeout(quickWait); quickWait = setTimeout(ringQuick, busy + 150); return; }
-  added.forEach(q => quickTold.add(q.id));
-  const times = added.length ? QUICK_RINGS : 1;
-  quickAt = Date.now();
-  quietUntil = quickAt + times * RING_EVERY - 100;   // 受付待ちの注文の音は、即予約の音が終わるまで休む
-  for (let i = 0; i < times; i++) setTimeout(() => { if (quickNew().length) beep(quickChime, 1568); }, i * RING_EVERY);
-}
-
-/** 「見た」を受け口に送る（quickSeen）。つながらなかった分は quickTodo に残し、次に読めたときに送り直す */
+/** 「確認」を受け口に送る（quickSeen）。つながらなかった分は quickTodo に残し、次に読めたときに送り直す */
 function sendQuickSeen() {
   if (quickSending || !quickTodo.size || !pinGet()) return;
   const ids = [...quickTodo].slice(0, 50);   // 受け口は1回に50個まで
@@ -610,7 +604,7 @@ function sendQuickSeen() {
 
 $('#quickOk')?.addEventListener('click', () => {
   quickNew().forEach(q => { quickMine.add(q.id); quickTodo.add(q.id); });
-  render();   // この端末の帯と音は、すぐ止める
+  render();   // この端末の帯と音は、すぐ止める（ほかに鳴らすものが無ければ）
   sendQuickSeen();
 });
 
@@ -951,7 +945,7 @@ function soundOnNow() {
   ready.then(() => {
     checkSound();
     render();
-    if (soundOn && !ringTimer && Date.now() >= quietUntil) beep();   // 即予約・取り消しの音を鳴らし始めたときは、重ねない
+    if (soundOn && !ringTimer && Date.now() >= quietUntil) beep();   // 取り消しの音を鳴らし始めたときは、重ねない
   });
 }
 
@@ -995,7 +989,6 @@ syncDays();
 // 受け口につないだときは、15秒ごとに注文を読み直す。電波が戻ったときもすぐ読む。合言葉がまだなら、合言葉の画面を出す
 if (ORDERS_ONLINE) {
   setInterval(pull, POLL_EVERY);
-  setInterval(ringQuick, 5000);   // 即予約の音を、QUICK_EVERY ごとに鳴らすため
   window.addEventListener('online', pull);
   if (pinGet()) pull(); else askPin();
 }

@@ -55,6 +55,15 @@ button { font: inherit; cursor: pointer; border: 0; }
 .s-btn.warn { background: var(--red); animation: blink 1s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: .55; } }
 
+/* 即予約が入った知らせ（2026-11-06。予約ボードの帯と同じ色）。上の帯（s-top）の中のいちばん下に、横いっぱいで出す */
+.quick-bar { flex-basis: 100%; order: 99; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: #b5661c; color: #fff; box-shadow: 0 0 0 3px #f3c58f; }
+.quick-bar[hidden] { display: none; }
+.qb-mark { flex: none; width: 40px; height: 40px; border-radius: 50%; background: #fff; color: #b5661c; font-size: 22px; font-weight: 900; display: grid; place-items: center; animation: blink 1s ease-in-out infinite; }
+.qb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.qb-text b { font-size: 18px; }
+.qb-text small { font-size: 12px; color: #fde9d3; }
+.quick-bar button { flex: none; min-width: 96px; height: 48px; padding: 0 18px; border-radius: 24px; background: #fff; color: #b5661c; font-size: 18px; font-weight: 800; }
+
 /* 音を出せないあいだの「画面をタッチしてください」（画面いっぱい。どこを触っても音がオンになる。下のボタンは押されない） */
 .sound-gate {
   position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
@@ -227,6 +236,12 @@ button { font: inherit; cursor: pointer; border: 0; }
 
 @media (max-width: 520px) {
   .f-grid { grid-template-columns: 1fr; }
+  /* 即予約の帯：スマホでは小さめに（上の帯は止まったままなので、下の注文が見える場所を残す） */
+  .quick-bar { gap: 8px; padding: 8px 10px; }
+  .qb-mark { width: 32px; height: 32px; font-size: 18px; }
+  .qb-text b { font-size: 15px; }
+  .qb-text small { font-size: 11px; }
+  .quick-bar button { min-width: 64px; height: 42px; padding: 0 12px; font-size: 16px; }
 }
 
 @media (max-width: 900px) {

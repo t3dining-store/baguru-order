@@ -225,6 +225,17 @@ button { font: inherit; cursor: pointer; border: 0; }
 .dlg-err[hidden] { display: none; }
 .dlg-btns { display: flex; gap: 8px; }
 
+/* 品切れの設定（2026-11-08）。上のボタンは、品切れにしているものがあると赤くなる */
+.s-btn.sold-on { background: var(--red); }
+.sold-list { display: flex; flex-direction: column; gap: 14px; margin: 0 0 12px; }
+.sold-sec h4 { margin: 0 0 6px; font-size: 14px; color: var(--main); }
+.sold-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px; }
+.sold-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 6px 8px 6px 12px; border-radius: 12px; background: var(--soft); color: var(--ink); text-align: left; font-weight: 700; line-height: 1.35; }
+.sold-row b { flex: none; padding: 4px 12px; border-radius: 999px; background: #fff; color: var(--green); border: 2px solid var(--green); font-size: 13px; }
+.sold-row.out { background: var(--red-soft); color: var(--red); }
+.sold-row.out b { background: var(--red); color: #fff; border-color: var(--red); }
+.sold-row:disabled { opacity: .6; cursor: default; }
+
 /* できあがり時間の調整 */
 .t-at { margin: 0 0 12px; text-align: center; }
 .t-at b { font-size: 46px; line-height: 1.1; color: var(--main); font-variant-numeric: tabular-nums; }

@@ -107,6 +107,7 @@ const STAFF_MSG = {
   not_setup: '受け口の準備がまだです（予約ボードの引き継ぎ書の setup）。',
   not_ready: '受け口の場所を読めませんでした。Wi-Fi・電波を確かめて「更新」を押してください。',
   no_answer: '受け口から返事がありませんでした。少し待って、もう一度お試しください。',
+  too_big: 'アプリの中身が大きすぎて保存できませんでした（バグるマネージで、写真や文を減らしてください）。',
   offline: 'つながりませんでした。Wi-Fi・電波を確かめてください。',
 };
 const staffText = e => STAFF_MSG[e?.code] || STAFF_MSG.offline;
@@ -470,6 +471,7 @@ function card(o) {
       ${o.memo ? `<p class="c-memo">ご要望：${esc(o.memo)}</p>` : ''}
       <div class="c-sum"><span>合計${pay}</span><b>${yen(o.total)}</b></div>
       ${priceCheck(o)}
+      ${soldCheck(o)}
       ${o.shopMsg && o.status !== 'declined' ? `<p class="c-msg">お客様への一言：${esc(o.shopMsg)}</p>` : ''}
       ${o.status === 'canceled' ? `<p class="c-cancel">取り消し（${esc(o.canceledBy || '')}）</p>` : ''}
       ${o.status === 'declined' ? `<p class="c-cancel">お断りしました${o.shopMsg || o.declineNote ? `（${esc(o.shopMsg || o.declineNote)}）` : ''}</p>` : ''}
@@ -494,6 +496,7 @@ function render() {
   checkCook(all);
   ringCancel();
   paintQuick();
+  paintSold();
   const byTime = (a, b) => a.pickupAt.localeCompare(b.pickupAt);
   for (const col of $$('.col')) {
     const items = all.filter(o => o.status === col.dataset.col && !isBooked(o)).sort(byTime);
@@ -834,6 +837,119 @@ $('#pLines').addEventListener('click', e => {
   paintPhone();
 });
 $$('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+
+/* ---------------------------------------------------------------------
+ *  品切れの設定（2026-11-08 ko-dai さんの指示「アプリで品切れ設定ができるように」「公式アプリにもホームページにもテイクアウトページで反映されるように」
+ *  「各メニューとセット、アサイーの追加トッピングも設定できるように」。どのアプリで設定するかは、ko-dai さんが Order受付を選んだ）
+ *  ・保存先は、バグるマネージの「売り切れ」と同じ（受け口の appContent の中身。items[商品id].soldOut と choices['グループid/名前'].soldOut）。
+ *    どちらで切り替えても同じになる。公式アプリは js/content.js で重ねる（品切れは押せない・選べない）。
+ *    ホームページのテイクアウトのページは、バグる HP のセッションが同じ中身を読んで出す（頼んだ）
+ *  ・押したらすぐ保存する。最新の中身を読み、その印だけを変えて saveAppContent（expect）。ほかの端末（マネージ）が先に保存していたら、
+ *    新しい中身にもう一度その印だけを入れて送り直す（ほかの直しを消さない）
+ *  ・★マネージで保存していない直しがあるときに、ここで切り替えると、マネージの保存は「ほかの端末で、先に保存されていました」になる（マネージの直しは消える）
+ *  ・ここで切り替えるのは、テイクアウトの商品（出さないものは除く）・ハンバーグBOXのソース・唐揚げ定食の味・お得なセット・アサイーの追加トッピング。
+ *    ソースと味は、ホームページではソースごと・味ごとのメニューとして並ぶので、足した（Claude が決めた）。ご飯の量などは、今までどおりマネージで
+ * --------------------------------------------------------------------- */
+const SOLD_GROUPS = [['sauce', 'ハンバーグBOXのソース'], ['taste', '唐揚げ定食の味'], ['set', 'お得なセット'], ['topping', 'アサイーボウルの追加トッピング']];
+let soldBusy = false;
+let soldHtml = '';   // 前に描いた一覧（同じなら描き直さない。押している途中にボタンが入れかわらないように）
+
+/** 切り替えるものの一覧：[{ title, rows: [{ sec: 'items'|'choices', key, name, on }] }] */
+function soldList() {
+  const secs = CATEGORIES.map(c => ({ title: c.name, rows: ITEMS.filter(i => i.cat === c.id && !i.hidden)
+    .map(i => ({ sec: 'items', key: i.id, name: i.full || i.name, on: !!i.soldOut })) })).filter(x => x.rows.length);
+  for (const [gid, title] of SOLD_GROUPS) {
+    const g = CONTENT_BASE.groups.map(x => x.g).find(x => x.id === gid);
+    if (!g || !ITEMS.some(i => !i.hidden && i.groups.includes(g))) continue;
+    secs.push({ title, rows: g.choices.filter(c => !c.plain && !c.none).map(c => ({ sec: 'choices', key: contentKey.choice(g, c), name: c.n, on: !!c.soldOut })) });
+  }
+  return secs;
+}
+
+/** 上の「品切れ」ボタンの字と、開いている窓の一覧 */
+function paintSold() {
+  const secs = soldList(), n = secs.reduce((a, x) => a + x.rows.filter(r => r.on).length, 0);
+  const btn = $('#soldBtn');
+  if (btn) { btn.textContent = n ? `🚫 品切れ中 ${n}` : '品切れの設定'; btn.classList.toggle('sold-on', n > 0); }
+  const box = $('#soldList');
+  if (!box || !$('#soldDlg')?.open) return;
+  const html = secs.map(x => `<section class="sold-sec"><h4>${esc(x.title)}</h4><div class="sold-rows">${x.rows.map(r =>
+    `<button type="button" class="sold-row ${r.on ? 'out' : ''}" data-sec="${esc(r.sec)}" data-key="${esc(r.key)}" ${soldBusy ? 'disabled' : ''}><span>${esc(r.name)}</span><b>${r.on ? '品切れ' : '販売中'}</b></button>`).join('')}</div></section>`).join('');
+  if (html !== soldHtml) { box.innerHTML = html; soldHtml = html; }
+}
+function soldErr(text) { const e = $('#soldErr'); if (e) { e.textContent = text; e.hidden = !text; } }
+
+/** 中身（content）の sec の key に、品切れの印を付ける・外す（ほかの値はそのまま。空になった入れものは消す。マネージの setOv と同じ） */
+function withSold(content, sec, key, on) {
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const c = JSON.parse(JSON.stringify(isObj(content) ? content : {}));
+  const box = isObj(c[sec]) ? c[sec] : {}, o = isObj(box[key]) ? box[key] : {};
+  if (on) o.soldOut = true; else delete o.soldOut;
+  if (Object.keys(o).length) box[key] = o; else delete box[key];
+  if (Object.keys(box).length) c[sec] = box; else delete c[sec];
+  return c;
+}
+
+/** 受け口に保存する。ほかの端末が先に保存していたら（conflict）、その新しい中身で、もう一度この印だけを変えて送る（3回まで） */
+async function saveSold(sec, key, on) {
+  let cur = await ask({ action: 'appContent' });   // 最新の中身（だれでも読める口なので、合言葉は付けない）
+  for (let i = 0; i < 3; i++) {
+    const content = withSold(cur.content, sec, key, on);
+    try {
+      const r = await staffPost({ action: 'saveAppContent', content, expect: Number(cur.v) || 0 });
+      DB.set('content', { content, v: Number(r.v) || 0, at: r.at || '', got: Date.now() });   // この画面の控えも新しくする（予約注文の窓・この一覧）
+      applyContent(content);
+      return;
+    } catch (e) {
+      if (e.code !== 'conflict' || !e.data) throw e;
+      cur = { content: e.data.content, v: e.data.v };
+    }
+  }
+  throw Object.assign(new Error('conflict'), { code: 'conflict' });
+}
+
+$('#soldBtn')?.addEventListener('click', async () => {
+  soldErr(ORDERS_ONLINE ? '' : '試作では保存できません（受け口につないだときだけ）。');
+  soldHtml = '';
+  $('#soldDlg').showModal();
+  paintSold();
+  if (ORDERS_ONLINE && await refreshContent(true)) render();   // バグるマネージで変えた分も出す
+});
+$('#soldList')?.addEventListener('click', async e => {
+  const b = e.target.closest('[data-sec]');
+  if (!b || b.disabled || soldBusy || !ORDERS_ONLINE) return;
+  const on = !b.classList.contains('out');
+  soldBusy = true;
+  soldErr('');
+  paintSold();
+  b.querySelector('b').textContent = '保存中…';
+  try {
+    await saveSold(b.dataset.sec, b.dataset.key, on);
+  } catch (err) {
+    if (quiet(err)) $('#soldDlg').close();   // 合言葉の画面を出す（窓の下に隠れないように）
+    else soldErr(err.code === 'conflict' ? 'ほかの端末（バグるマネージなど）で同じときに保存していたため、保存できませんでした。もう一度押してください。' : staffText(err));
+  } finally {
+    soldBusy = false;
+    soldHtml = '';
+    render();
+  }
+});
+
+/** 受付待ち・申請の注文に、いま品切れにしているものが入っていたら知らせる（品切れにする前に開いたメニューから送られたとき。
+ *  公式アプリは、開いているあいだは3分に1回だけ中身を読み直すので、すぐには止まらない） */
+function soldCheck(o) {
+  if (!['new', 'request'].includes(o.status)) return '';
+  const names = [];
+  for (const l of o.lines || []) {
+    const item = ITEM_BY_ID[l.id];
+    if (!item) continue;
+    if (item.soldOut) names.push(item.full || item.name);
+    for (const t of l.opts || []) for (const g of item.groups || []) for (const c of g.choices) {
+      if (c.soldOut && (sameOpt(c.n, t) || (g.type === 'count' && String(t).startsWith(c.n + '×')))) names.push(c.n);
+    }
+  }
+  return names.length ? `<p class="c-check">⚠ 品切れ中のものが入っています：${esc([...new Set(names)].join('・'))}</p>` : '';
+}
 
 $('#pSend').addEventListener('click', async () => {
   // 経路は「予約」だけ（2026-11-04 ko-dai さんの指示。電話か店頭かの選択は外した）。カードに「予約」の札が付く

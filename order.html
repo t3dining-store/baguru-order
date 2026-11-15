@@ -28,7 +28,7 @@
 <link rel="manifest" href="manifest-store.json">
 <link rel="icon" href="img/store-icon-192.png">
 <link rel="apple-touch-icon" href="img/store-apple-touch-icon.png">
-<link rel="stylesheet" href="css/store.css?v=1e900484">
+<link rel="stylesheet" href="css/store.css?v=8d8da3db">
 </head>
 <body>
 <header class="s-top">
@@ -177,6 +177,15 @@
       <label class="f-field"><span>会社名・建物名など</span><input id="pAddr2" maxlength="120" autocomplete="off"></label>
     </div>
     <p class="f-note">配達先は、住所か会社名・建物名のどちらかを入れてください。</p>
+    <!-- 配達料のありなしと金額（2026-11-15 ko-dai さんの指示「配達の有無と金額を選択できるように」）。必ず選ぶ。ありのときは金額を＋−（100円きざみ）で選ぶ。打ち込むこともできる。
+         受け口の fee に入る（なしは 0）。品物の合計とは別（お客さまのアプリの配達の申請と同じ） -->
+    <div class="f-field"><span>配達料</span>
+      <div id="pFeeSeg" class="seg">
+        <label><input type="radio" name="pFee" value="yes"><span>あり</span></label>
+        <label><input type="radio" name="pFee" value="no"><span>なし（無料）</span></label>
+      </div>
+      <div id="pFeeRow" class="f-qty" hidden><span>金額</span><span class="qty-step"><button type="button" class="st-btn" data-fq="-100" aria-label="100円減らす">−</button><input id="pFeeN" type="number" min="0" max="100000" step="100" value="0" inputmode="numeric" aria-label="配達料（円）"><button type="button" class="st-btn" data-fq="100" aria-label="100円増やす">＋</button></span><span>円</span></div>
+    </div>
     <div class="f-field"><span>領収書</span>
       <div id="pRcptSeg" class="seg">
         <label><input type="radio" name="pRcpt" value="yes"><span>あり</span></label>
@@ -196,6 +205,7 @@
   </fieldset>
   <ul id="pLines" class="p-lines"></ul>
   <p class="f-total"><span id="pTotalLbl">合計（店頭で支払い）</span><b id="pTotal">¥0</b></p>
+  <p id="pFeeSum" class="f-note fee-sum" hidden></p>   <!-- 配達料があるときの、お支払いの合計（js/store.js の paintFee） -->
   <!-- カトラリー（お箸・スプーン）のありなしと、ありのときの個数（2026-11-15 ko-dai さんの指示）。必ずどちらかを選ぶ（公式アプリの「お箸・スプーンの有無」と同じ）。
        受け口には、ご要望の頭に「カトラリーあり（3個）」「カトラリーなし」と付けて送る（js/store.js の pSend・withCutN） -->
   <div class="f-field"><span>カトラリー（お箸・スプーン）</span>
@@ -218,6 +228,6 @@
 <script src="https://t3dining.github.io/baguru-app/js/content.js?v=86d4c182"></script>
 <!-- 受け口とのやりとり（公式アプリと同じもの。切り替え ORDERS_ONLINE・受け口の場所・送り方）。公式アプリのセッションの持ち物 -->
 <script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=70c5663d"></script>
-<script src="js/store.js?v=ca0d82d6"></script>
+<script src="js/store.js?v=de938d53"></script>
 </body>
 </html>

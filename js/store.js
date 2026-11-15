@@ -473,7 +473,7 @@ function card(o) {
     o.route && o.route !== 'アプリ' ? `<span class="c-kind k-route">${esc(o.route)}</span>` : '',   // 予約注文（いまは「予約」。前の注文は「電話」「店頭」）
   ].join('');
   const pay = o.kind !== 'delivery' ? '（店頭で支払い）'
-    : `（お届けのときに現金で${o.fee != null ? `・配達料 ${yen(o.fee)} は別` : needsFee(o) && appRequest(o) ? '・配達料は承認のときに決めます' : ''}）`;   // 予約注文の配達は、申請でないので承認が無い
+    : `（お届けのときに現金で${o.fee != null && Number(o.fee) > 0 ? `・配達料 ${yen(Number(o.fee))} は別` : o.fee != null ? '・配達料なし' : needsFee(o) && appRequest(o) ? '・配達料は承認のときに決めます' : ''}）`;   // 予約注文の配達は、申請でないので承認が無い
   return `<article class="card ${fresh.has(o.id) ? 'fresh' : ''} ${cookNow.has(o.id) ? 'cook-now' : ''} ${late ? 'late' : ''} ${o.kind === 'delivery' ? 'is-delivery' : ''}">
       ${live ? dayStrip(o, t) : ''}
       <div class="c-top">
@@ -774,8 +774,9 @@ function openPhone() {
   // 配達（2026-11-15）：はじめは「店頭で受け取り」。配達先・領収書は空
   const pk = $('input[name="pKind"][value="pickup"]'); if (pk) pk.checked = true;
   ['#pAddr', '#pAddr2', '#pRcptTo'].forEach(s => { if ($(s)) $(s).value = ''; });
-  $$('input[name="pRcpt"]').forEach(x => { x.checked = false; });
+  $$('input[name="pRcpt"], input[name="pFee"]').forEach(x => { x.checked = false; });
   if ($('#pRcptLater')) $('#pRcptLater').checked = false;
+  if ($('#pFeeN')) $('#pFeeN').value = 0;
   paintKind();
   $('#pSend').disabled = false;
   paintOpts();
@@ -932,6 +933,7 @@ function paintPhone() {
       shownOpts(l).length ? `<small>${esc(shownOpts(l).join(' / '))}</small>` : ''}</li>`).join('') : '<li class="none">まだ品物がありません</li>';
   $('#pTotal').textContent = yen(phone.lines.reduce((s, l) => s + l.unit * l.qty, 0));
   paintTiles();   // ボタンの右上の数
+  paintFee();     // 配達料を足したお支払い
 }
 
 $('#phoneBtn').addEventListener('click', openPhone);
@@ -1036,8 +1038,33 @@ function paintKind() {
     row.hidden = !(deliv && $('input[name="pRcpt"]:checked')?.value === 'yes');
     $('#pRcptTo').disabled = !!$('#pRcptLater')?.checked;   // 後日連絡なら、宛名は入れない
   }
+  paintFee();
 }
-$$('input[name="pKind"], input[name="pRcpt"]').forEach(x => x.addEventListener('change', () => { paintKind(); phoneErr(''); }));
+/* 配達料（2026-11-15 ko-dai さんの指示「配達の有無と金額を選択できるように」）。「あり」なら金額を＋−（100円きざみ。0〜100,000円）で選ぶ。打ち込むこともできる。
+   受け口には fee で送る（なしは 0）。品物の合計（total）とは別で、カードには「配達料 ¥500 は別」「配達料なし」と出る */
+const feeChoice = () => $('input[name="pFee"]:checked')?.value || '';
+const feeNow = () => Math.max(0, Math.min(100000, parseInt($('#pFeeN')?.value, 10) || 0));
+function paintFee(fix = true) {   // fix：欄の字を、0〜100,000 の数に直す（打っている途中は直さない）
+  const row = $('#pFeeRow');
+  if (!row) return;   // 前の版の画面
+  const deliv = phoneKind() === 'delivery', on = deliv && feeChoice() === 'yes', fee = feeNow();
+  row.hidden = !on;
+  if (fix) $('#pFeeN').value = fee;
+  $$('#phoneDlg [data-fq]').forEach(b => { b.disabled = Number(b.dataset.fq) < 0 ? fee <= 0 : fee >= 100000; });
+  const sum = $('#pFeeSum'), items = (phone?.lines || []).reduce((s, l) => s + l.unit * l.qty, 0);
+  sum.hidden = !(on && fee > 0);
+  sum.textContent = on && fee > 0 ? `配達料 ${yen(fee)} を足すと、お支払いは ${yen(items + fee)} です` : '';
+}
+$$('input[name="pKind"], input[name="pRcpt"], input[name="pFee"]').forEach(x => x.addEventListener('change', () => { paintKind(); phoneErr(''); }));
+$('#pFeeN')?.addEventListener('change', () => paintFee());
+$('#pFeeN')?.addEventListener('input', () => paintFee(false));
+$('#phoneDlg').addEventListener('click', e => {
+  const b = e.target.closest('[data-fq]');
+  if (!b || b.disabled) return;
+  $('#pFeeN').value = Math.max(0, Math.min(100000, feeNow() + Number(b.dataset.fq)));
+  paintFee();
+  phoneErr('');
+});
 $('#pRcptLater')?.addEventListener('change', () => { paintKind(); phoneErr(''); });
 $('#phoneDlg').addEventListener('click', e => {
   const b = e.target.closest('[data-cq]');
@@ -1215,6 +1242,9 @@ $('#pSend').addEventListener('click', async () => {
   let rcptWord = '';
   if (kind === 'delivery') {
     if (!addr && !addr2) return phoneErr('配達先の住所か、会社名・建物名を入れてください');
+    const fc = $('input[name="pFee"]:checked')?.value;
+    if ($('#pFeeSeg') && !fc) return phoneErr('配達料の「あり」か「なし」を選んでください');
+    if (fc === 'yes' && !(feeNow() > 0)) return phoneErr('配達料の金額を入れてください（無料なら「なし」）');
     const rc = $('input[name="pRcpt"]:checked')?.value, later = !!$('#pRcptLater')?.checked, to = $('#pRcptTo').value.trim();
     if (!rc) return phoneErr('領収書の「あり」か「なし」を選んでください');
     if (rc === 'yes' && !later && !to) return phoneErr('領収書の宛名を入れるか、「宛名は後日連絡」を選んでください');
@@ -1227,7 +1257,7 @@ $('#pSend').addEventListener('click', async () => {
   const note = [cutWord, rcptWord, $('#pNote').value.trim()].filter(Boolean).join('／');
   if (note.length > 300) return phoneErr(`ご要望・メモが長すぎます（領収書の宛名などと合わせて300字まで。あと${note.length - 300}字短くしてください）`);
   const row = { kind, asap: false, pickupAt: at.toISOString(), name, tel, route, note,
-    ...(kind === 'delivery' ? { address: addr, address2: addr2 } : {}),
+    ...(kind === 'delivery' ? { address: addr, address2: addr2, ...($('#pFeeSeg') ? { fee: feeChoice() === 'yes' ? feeNow() : 0 } : {}) } : {}),
     lines: phone.lines, meals: phoneMeals() };
   $('#pSend').disabled = true;
   const ok = await addPhoneOrder(row);

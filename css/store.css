@@ -31,6 +31,10 @@ body {
   font-size: 15px; line-height: 1.55;
 }
 button { font: inherit; cursor: pointer; border: 0; }
+/* 続けて押したときに、画面が拡大されないようにする（2026-11-15 ko-dai さんの指示「連続で個数などをタップすると拡大されてしまうので、タップで拡大されるのを無くす」）。
+   iPad・iPhone の Safari の「ダブルタップで拡大」を止める。2本指で広げる拡大と、上下に動かすのはそのまま（字が小さいときに使えるように）。
+   ★窓（dialog）は画面のいちばん上に出るので、中の部品にも付ける */
+html, body, button, input, select, textarea, label, a, dialog, .seg span, .p-tile { touch-action: manipulation; }
 
 .s-top {
   position: sticky; top: 0; z-index: 10;
@@ -227,6 +231,11 @@ button { font: inherit; cursor: pointer; border: 0; }
 #pDeliv { margin: 0 0 12px; padding: 10px 12px 2px; border-radius: 12px; background: #eef4fc; border: 1.5px solid #9fb8e3; }
 #pDeliv[hidden] { display: none; }
 #pRcptSeg { margin-bottom: 8px; }
+#pFeeSeg { margin-bottom: 8px; }
+#pFeeRow { margin-bottom: 12px; }
+.dlg .f-qty #pFeeN { width: 96px; }
+.fee-sum { margin: -6px 0 12px; text-align: right; color: #2f5fa3; font-weight: 700; }
+.fee-sum[hidden] { display: none; }
 .rcpt-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .rcpt-row[hidden] { display: none; }
 .rcpt-row input[type=text], .dlg .rcpt-row #pRcptTo { flex: 1 1 200px; width: auto; }

@@ -379,6 +379,13 @@ function optOf(item, text) {
  *  2026-11-05 の Codex のレビュー：品物の id と名前は別々に届くので、名前もメニューと照らす（安い品物の id に高い品物の名前を付けると、値段は合ってしまう）。
  *  1つだけ選ぶグループの重なりと、必ず選ぶもの（ソース・味・サイズなど「普通」の無いもの）の抜けも見る */
 function lineCheck(l) {
+  const st = SET_BY_ID[l.id];
+  if (st) {   // 予約注文で別の品物として打ったセット（2026-11-15。値段は選ぶものの値段）
+    const ch = setChoice(st);
+    if (!ch) return { unit: null, issue: `「${l.name}」はメニューに無いセットです` };
+    if (l.name !== st.name || (l.opts || []).length) return { unit: null, issue: `「${l.name}」の名前がメニューと合いません（メニューでは「${st.name}」）` };
+    return { unit: ch.p, issue: '' };
+  }
   const item = ITEM_BY_ID[l.id];
   if (!item) return { unit: null, issue: `「${l.name}」はメニューに無い品物です` };
   if (!sameOpt(item.full || item.name, l.name)) return { unit: null, issue: `「${l.name}」の名前がメニューと合いません（メニューでは「${item.full || item.name}」）` };
@@ -746,7 +753,7 @@ function openPhone() {
   $('#pAsap')?.remove();
   paintItems();
   // 開いたときに、バグるマネージの値段・売り切れも読み直す（CONTENT_EVERY に1回まで）。まだ品物を選んでいなければ、並べ直す
-  refreshContent().then(changed => { if (changed && $('#phoneDlg').open && !$('#pItem').value) paintItems(); });
+  refreshContent().then(changed => { if (changed && $('#phoneDlg').open && !$('#pItem')?.value) paintItems(); });
   $('#pQty').value = 1;
   paintQty();
   $$('input[name="pCut"]').forEach(x => { x.checked = false; });   // カトラリーは、はじめはどちらも選ばない（必ず選んでもらう）
@@ -758,8 +765,87 @@ function openPhone() {
   $('#phoneDlg').showModal();
 }
 
-/** 品物の選ぶ欄。出さないものは並べず、売り切れは「売り切れ」と出して選べないようにする */
+/* ---------------------------------------------------------------------
+ *  品物のボタン（2026-11-15 ko-dai さんの指示「商品を入力するときに Usen のハンディアプリのようにこのような配置で押すとサブメニューが表示されるように」
+ *  「からあげ、ポテト、ミニサラダのセットはサブメニューではなく、別の商品として打てるように」）
+ *  ・品物をカテゴリーごとにボタンで並べる。右上の丸は入れた数。押すと1つ入る（同じものは数が増える）
+ *  ・選ぶもの（ご飯の量・追加ハンバーグ・味・サイズ・トッピングなど）がある品物は「›」が付き、押すとサブメニュー（#subDlg）が出る
+ *  ・ハンバーグBOXは、USEN と同じくソースごとのボタン（ソースは選んだ形で入る。サブメニューにはソースを出さない）
+ *  ・セット（data.js の SET・SALAD の選ぶもの）は、定食・BOX のサブメニューに出さず、「セット」の別のボタン（SET_TILES）。
+ *    注文には別の行（id は x_…。値段は選ぶものの値段。食数には数えない）で入る。定食・BOX の行は「セットなし」の形
+ *  ・★前の版の画面（品物の選ぶ欄 #pItem がある形）が端末に残っているときは、前のとおり動く（TILES が false）
+ * --------------------------------------------------------------------- */
+const TILES = !!$('#pTiles');
+const SEP_GROUPS = ['set', 'salad'];   // 別の品物として打つ選ぶもの（ボタンの形のときだけ）
+const SET_TILES = [
+  { id: 'x_kara', g: 'set', n: '手作り唐揚げ（5個）', name: '唐揚げセット' },
+  { id: 'x_potato', g: 'set', n: '揚げたてポテトフライ', name: 'ポテトセット' },
+  { id: 'x_salad', g: 'salad', n: 'ミニシーザーサラダ', name: 'ミニサラダセット' },
+];
+const SET_BY_ID = Object.fromEntries(SET_TILES.map(s => [s.id, s]));
+/** セットの元の選ぶもの（値段・売り切れはマネージと Order受付の品切れの設定のまま） */
+const setChoice = s => CONTENT_BASE.groups.map(x => x.g).find(g => g.id === s.g)?.choices.find(c => c.n === s.n) || null;
+/** サブメニューに出す選ぶもの（ソースのように決まったもの・セットは出さない） */
+const subGroups = (item, fixed = {}) => item.groups.filter(g => !(g.id in fixed) && !(TILES && SEP_GROUPS.includes(g.id)));
+/** ボタンの一覧：[{ title, tiles: [{ key, item?, fixed, set?, name, price, sold }] }] */
+function tileList() {
+  const out = [];
+  for (const c of CATEGORIES) {
+    const tiles = [];
+    for (const i of ITEMS.filter(x => x.cat === c.id && !x.hidden)) {
+      const sg = i.groups.find(g => g.id === 'sauce');
+      if (sg) sg.choices.forEach((ch, k) => tiles.push({ key: `${i.id}#${k}`, item: i, fixed: { sauce: k }, name: i.id === 'hbox' ? `${ch.n}BOX` : `${i.name}（${ch.n}）`, price: i.price + (ch.p || 0), sold: !!(i.soldOut || ch.soldOut) }));
+      else tiles.push({ key: i.id, item: i, fixed: {}, name: i.name, price: i.price, sold: !!i.soldOut });
+    }
+    if (tiles.length) out.push({ title: c.name, tiles });
+  }
+  const sets = SET_TILES.map(s => ({ s, ch: setChoice(s) })).filter(x => x.ch).map(({ s, ch }) => ({ key: s.id, set: s, fixed: {}, name: s.name, price: ch.p, sold: !!ch.soldOut }));
+  if (sets.length) out.push({ title: 'セット（定食・BOXに付けるもの）', tiles: sets });
+  return out;
+}
+function paintTiles() {
+  const box = $('#pTiles');
+  if (!box) return;
+  const count = key => (phone?.lines || []).filter(l => l.tile === key).reduce((s, l) => s + l.qty, 0);
+  box.innerHTML = tileList().map(sec => `<div class="p-cat"><h5>${esc(sec.title)}</h5><div class="p-grid">${sec.tiles.map(t => {
+    const n = count(t.key), more = !!t.item && subGroups(t.item, t.fixed).length > 0;
+    return `<button type="button" class="p-tile ${t.sold ? 'sold' : ''} ${n ? 'has' : ''}" data-tile="${esc(t.key)}" ${t.sold ? 'disabled' : ''}>`
+      + `${n ? `<i class="badge">${n}</i>` : ''}<b>${esc(t.name)}</b><small>${t.sold ? '売り切れ' : yen(t.price) + (more ? '〜' : '')}</small>${more ? '<i class="more" aria-hidden="true">›</i>' : ''}</button>`;
+  }).join('')}</div></div>`).join('');
+}
+/** 入れる。同じ品物・同じ選ぶもの・同じボタンの行があれば、数を足す */
+function addLine(l, qty) {
+  const same = phone.lines.find(x => x.id === l.id && x.unit === l.unit && x.tile === l.tile && (x.opts || []).join('|') === (l.opts || []).join('|'));
+  if (same) same.qty = clampQty(same.qty + qty); else phone.lines.push({ ...l, qty: clampQty(qty) });
+  phoneErr('');
+  paintPhone();
+}
+let sub = null;   // サブメニューで選んでいるボタン
+function subErr(text) { const e = $('#subErr'); if (e) { e.textContent = text; e.hidden = !text; } }
+function openSub(t) {
+  sub = t;
+  $('#subTitle').textContent = t.name;
+  paintOpts(t.item, t.fixed);
+  $('#pQty').value = 1;
+  paintQty();
+  subErr('');
+  $('#subDlg').showModal();
+}
+$('#subDlg')?.addEventListener('close', () => { sub = null; $('#pOpts').innerHTML = ''; });
+$('#pTiles')?.addEventListener('click', e => {
+  const b = e.target.closest('[data-tile]');
+  if (!b || b.disabled) return;
+  const t = tileList().flatMap(s => s.tiles).find(x => x.key === b.dataset.tile);
+  if (!t || t.sold) return;
+  if (t.set) return addLine({ id: t.set.id, name: t.set.name, opts: [], unit: t.price, tile: t.key }, 1);
+  if (subGroups(t.item, t.fixed).length) return openSub(t);
+  const p = priceOf(t.item, readSel(t.item, t.fixed, false));   // サイド・ドリンクなど、選ぶものが無い品物は、押すと1つ入る
+  addLine({ id: t.item.id, name: t.item.full || t.item.name, opts: p.opts, unit: p.unit, tile: t.key }, 1);
+});
+
+/** 品物の選ぶ欄（前の版の画面）。出さないものは並べず、売り切れは「売り切れ」と出して選べないようにする */
 function paintItems() {
+  if (TILES) return paintTiles();
   const label = i => `${esc(i.full || i.name)}（${i.soldOut ? '売り切れ' : yen(i.price) + (i.groups.length ? '〜' : '')}）`;
   $('#pItem').innerHTML = '<option value="">品物を選んでください</option>' + CATEGORIES.map(c => {
     const shown = ITEMS.filter(i => i.cat === c.id && !i.hidden);
@@ -767,19 +853,19 @@ function paintItems() {
   }).join('');
 }
 
-/** 選んだ品物の、選ぶ項目（ソース・ご飯の量など）。売り切れの項目は選べない */
-function paintOpts() {
-  const item = ITEM_BY_ID[$('#pItem').value];
-  const plus = c => c.soldOut ? '（売り切れ）' : c.p ? `（+${yen(c.p)}）` : '';
-  $('#pOpts').innerHTML = !item ? '' : item.groups.map(g => {
+/** 選んだ品物の、選ぶ項目（ソース・ご飯の量など）。ボタンで選ぶ（2026-11-15。前は選ぶ欄）。売り切れの項目は選べない。
+ *  fixed（ボタンで決まったソースなど）と、ボタンの形のときのセット（SEP_GROUPS）は出さない */
+function paintOpts(item = ITEM_BY_ID[$('#pItem')?.value], fixed = {}) {
+  const note = c => c.soldOut ? '<small>売り切れ</small>' : c.show ? `<small>${esc(c.show)}</small>` : c.p ? `<small>+${yen(c.p)}</small>` : '';   // アサイーのサイズは値段そのもの（show）
+  $('#pOpts').innerHTML = !item ? '' : subGroups(item, fixed).map(g => {
     if (g.type === 'one') {
-      const def = g.choices.findIndex(c => c.plain && !c.soldOut);   // 「並盛」「なし」があれば、はじめからそれ。ソースなどは選んでもらう
-      return `<label class="f-opt"><span>${esc(g.name)}</span><select data-g="${esc(g.id)}">${def < 0 ? '<option value="">選んでください</option>' : ''}${
-        g.choices.map((c, i) => `<option value="${i}" ${i === def ? 'selected' : ''} ${c.soldOut ? 'disabled' : ''}>${esc(c.n)}${plus(c)}</option>`).join('')}</select></label>`;
+      const def = g.choices.findIndex(c => c.plain && !c.soldOut);   // 「並盛」「なし」があれば、はじめからそれ。ソース・味・サイズなどは選んでもらう
+      return `<div class="f-opt"><span>${esc(g.name)}</span><div class="seg opt-seg">${
+        g.choices.map((c, i) => `<label><input type="radio" name="o_${esc(g.id)}" data-g="${esc(g.id)}" value="${i}" ${i === def ? 'checked' : ''} ${c.soldOut ? 'disabled' : ''}><span>${esc(c.n)}${note(c)}</span></label>`).join('')}</div></div>`;
     }
     if (g.type === 'many') {
-      return `<div class="f-opt"><span>${esc(g.name)}（なければ選ばない）</span><div class="f-checks">${
-        g.choices.map((c, i) => c.none ? '' : `<label><input type="checkbox" data-g="${esc(g.id)}" value="${i}" ${c.soldOut ? 'disabled' : ''}>${esc(c.n)}${plus(c)}</label>`).join('')}</div></div>`;
+      return `<div class="f-opt"><span>${esc(g.name)}（なければ選ばない。いくつでも）</span><div class="seg opt-seg">${
+        g.choices.map((c, i) => c.none ? '' : `<label><input type="checkbox" data-g="${esc(g.id)}" value="${i}" ${c.soldOut ? 'disabled' : ''}><span>${esc(c.n)}${note(c)}</span></label>`).join('')}</div></div>`;
     }
     if (g.type === 'count') {
       const c = g.choices[0];
@@ -794,12 +880,20 @@ function paintOpts() {
   }).join('');
 }
 
-/** 選んだもの（common.js の priceOf に渡す形） */
-function readSel(item) {
+/** 選んだもの（common.js の priceOf に渡す形）。fixed（ボタンで決まったソースなど）はその値。
+ *  画面に出していない選ぶもの（ボタンの形のときのセット、dom が false のとき）は「なし」「並盛」など決まりの値 */
+function readSel(item, fixed = {}, dom = true) {
   const sel = {};
   for (const g of item.groups) {
+    if (g.id in fixed) { sel[g.id] = fixed[g.id]; continue; }
+    if (!dom || !$(`#pOpts [data-g="${CSS.escape(g.id)}"]`)) {
+      const k = g.choices.findIndex(c => (g.type === 'many' ? c.none : c.plain));
+      sel[g.id] = g.type === 'count' ? 0 : g.type === 'many' ? (k >= 0 ? [k] : []) : k >= 0 ? k : null;
+      continue;
+    }
     if (g.type === 'one') {
-      const v = $(`#pOpts select[data-g="${g.id}"]`).value;
+      const el = $(`#pOpts [data-g="${CSS.escape(g.id)}"]:checked`) || $(`#pOpts select[data-g="${CSS.escape(g.id)}"]`);
+      const v = el ? el.value : '';
       sel[g.id] = v === '' ? null : Number(v);
     }
     if (g.type === 'many') {
@@ -818,11 +912,22 @@ function paintPhone() {
     <li><b>${esc(l.name)}</b><span class="p-q"><button type="button" class="st-btn sm" data-lq="-1" data-i="${i}" aria-label="1つ減らす" ${l.qty <= 1 ? 'disabled' : ''}>−</button><span class="q">×${l.qty}</span><button type="button" class="st-btn sm" data-lq="1" data-i="${i}" aria-label="1つ増やす" ${l.qty >= QTY_MAX ? 'disabled' : ''}>＋</button></span><span class="p-sum">${yen(l.unit * l.qty)}</span><button type="button" class="p-del" data-del="${i}" aria-label="消す">✕</button>${
       shownOpts(l).length ? `<small>${esc(shownOpts(l).join(' / '))}</small>` : ''}</li>`).join('') : '<li class="none">まだ品物がありません</li>';
   $('#pTotal').textContent = yen(phone.lines.reduce((s, l) => s + l.unit * l.qty, 0));
+  paintTiles();   // ボタンの右上の数
 }
 
 $('#phoneBtn').addEventListener('click', openPhone);
-$('#pItem').addEventListener('change', () => { paintOpts(); phoneErr(''); });
+$('#pItem')?.addEventListener('change', () => { paintOpts(); phoneErr(''); });
 $('#pAdd').addEventListener('click', () => {
+  if (TILES) {   // サブメニューの「入れる」
+    if (!sub) return;
+    const { item, fixed } = sub;
+    if (item.soldOut || item.hidden) return subErr('この品物は、いま売り切れです');
+    const p = priceOf(item, readSel(item, fixed));
+    if (p.missing) return subErr(`「${p.missing.name}」を選んでください`);
+    addLine({ id: item.id, name: item.full || item.name, opts: p.opts, unit: p.unit, tile: sub.key }, clampQty($('#pQty').value));
+    $('#subDlg').close();
+    return;
+  }
   const item = ITEM_BY_ID[$('#pItem').value];
   if (!item) return phoneErr('品物を選んでください');
   if (item.soldOut || item.hidden) return phoneErr('この品物は、いま売り切れです');
@@ -857,7 +962,7 @@ const clampQty = v => Math.max(1, Math.min(QTY_MAX, parseInt(v, 10) || 1));
 function paintQty() {
   const q = clampQty($('#pQty').value);
   $('#pQty').value = q;
-  $$('#phoneDlg [data-qty]').forEach(b => { b.disabled = Number(b.dataset.qty) < 0 ? q <= 1 : q >= QTY_MAX; });
+  $$('[data-qty]').forEach(b => { b.disabled = Number(b.dataset.qty) < 0 ? q <= 1 : q >= QTY_MAX; });   // サブメニュー（#subDlg）にある
 }
 $('#pQty').addEventListener('change', paintQty);
 
@@ -894,12 +999,12 @@ $('#phoneDlg').addEventListener('click', e => {
   $('#pCutN').value = clampQty($('#pCutN').value) + Number(b.dataset.cq);
   paintCut();
 });
-$('#phoneDlg').addEventListener('click', e => {
+document.addEventListener('click', e => {   // 予約注文の窓とサブメニューの両方
   const b = e.target.closest('[data-qty]');
   if (b && !b.disabled) { $('#pQty').value = clampQty($('#pQty').value) + Number(b.dataset.qty); return paintQty(); }
   const c = e.target.closest('[data-cnt]');
   if (!c || c.disabled) return;
-  const item = ITEM_BY_ID[$('#pItem').value], g = item?.groups.find(x => x.id === c.dataset.for);
+  const item = sub?.item || ITEM_BY_ID[$('#pItem')?.value], g = item?.groups.find(x => x.id === c.dataset.for);
   const box = $(`#pOpts [data-g="${CSS.escape(c.dataset.for)}"]`);
   if (!g || !box) return;
   const max = g.max || 10, n = Math.max(0, Math.min(max, (parseInt(box.value, 10) || 0) + Number(c.dataset.cnt))), ch = g.choices[0];
@@ -1012,6 +1117,7 @@ function soldCheck(o) {
   if (!['new', 'request'].includes(o.status)) return '';
   const names = [];
   for (const l of o.lines || []) {
+    if (SET_BY_ID[l.id]) { if (setChoice(SET_BY_ID[l.id])?.soldOut) names.push(l.name); continue; }   // 別の品物として打ったセット
     const item = ITEM_BY_ID[l.id];
     if (!item) continue;
     if (item.soldOut) names.push(item.full || item.name);
@@ -1033,7 +1139,7 @@ $('#pSend').addEventListener('click', async () => {
   if (!tel) return phoneErr('電話番号を入れてください');
   // 受け口の telOk_ と同じ形（0 で始まる10〜11けた）。違うと、送ってから受け口に断られる（2026-11-05 の Codex のレビュー）
   if (!/^0\d{9,10}$/.test(tel.replace(/[^\d]/g, ''))) return phoneErr('電話番号を確かめてください（0 で始まる10〜11けた）');
-  if ($('#pItem').value) return phoneErr('選んだ品物を「＋ 入れる」で入れてください（入れないなら、品物を「品物を選んでください」に戻す）');
+  if ($('#pItem')?.value) return phoneErr('選んだ品物を「＋ 入れる」で入れてください（入れないなら、品物を「品物を選んでください」に戻す）');
   if (!phone.lines.length) return phoneErr('品物を1つ以上入れてください（品物を選んで「＋ 入れる」）');
   if (!$('#pDay').value || !$('#pHm').value || isNaN(at)) return phoneErr('受け取りの日と時刻を選んでください');
   if (at < Date.now() - 5 * 60000) return phoneErr('受け取りの時刻が、もう過ぎています');

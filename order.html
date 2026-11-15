@@ -28,7 +28,7 @@
 <link rel="manifest" href="manifest-store.json">
 <link rel="icon" href="img/store-icon-192.png">
 <link rel="apple-touch-icon" href="img/store-apple-touch-icon.png">
-<link rel="stylesheet" href="css/store.css?v=be56c082">
+<link rel="stylesheet" href="css/store.css?v=9502f92b">
 </head>
 <body>
 <header class="s-top">
@@ -131,6 +131,16 @@
   <div class="dlg-btns"><button type="button" class="b-sub" data-close>やめる</button><button type="button" id="tOk" class="b-main">この時間にする</button></div>
 </dialog>
 
+<!-- 予約注文のサブメニュー（2026-11-15 ko-dai さんの指示。USEN のハンディのように、品物のボタンを押すと出る）。ご飯の量・追加ハンバーグ・味・サイズ・トッピングなどと数を選んで入れる -->
+<dialog id="subDlg" class="dlg">
+  <h3 id="subTitle"></h3>
+  <div id="pOpts"></div>
+  <!-- 数は＋と−のボタンで選ぶ（2026-11-15 ko-dai さんの指示）。大きな数は、まん中の数を押して打ち込むこともできる -->
+  <div class="f-qty sub-qty"><span>数</span><span class="qty-step"><button type="button" class="st-btn" data-qty="-1" aria-label="1つ減らす" disabled>−</button><input id="pQty" type="number" min="1" max="99" value="1" inputmode="numeric" aria-label="数"><button type="button" class="st-btn" data-qty="1" aria-label="1つ増やす">＋</button></span></div>
+  <p id="subErr" class="dlg-err" hidden></p>
+  <div class="dlg-btns"><button type="button" class="b-sub" data-close>やめる</button><button type="button" id="pAdd" class="b-main">＋ 入れる</button></div>
+</dialog>
+
 <!-- 品切れの設定（2026-11-08 ko-dai さんの指示「アプリで品切れ設定ができるように」）。テイクアウトの商品・お得なセット・アサイーの追加トッピング。
      押すとすぐ保存する。保存先はバグるマネージの「売り切れ」と同じ（受け口の appContent）で、公式アプリ・ホームページのテイクアウトのページがこれを読む -->
 <dialog id="soldDlg" class="dlg wide">
@@ -142,7 +152,7 @@
 </dialog>
 
 <!-- 予約注文を入れる（2026-11-04 に「電話・店頭の注文」から名前を変え、電話か店頭かの選択を外した。ko-dai さんの指示）。受け付けた形で入り、お客様のアプリには出ない -->
-<dialog id="phoneDlg" class="dlg wide">
+<dialog id="phoneDlg" class="dlg wide p-dlg">
   <h3>予約注文を入れる</h3>
   <div class="f-grid">
     <label class="f-field"><span>お名前</span><input id="pName" maxlength="40" autocomplete="off"></label>
@@ -153,15 +163,11 @@
     <label class="f-field"><span>受け取りの日</span><input id="pDay" type="date"></label>
     <label class="f-field"><span>時刻</span><input id="pHm" type="time" step="300"></label>
   </div>
+  <!-- 品物は、USEN のハンディのようにボタンを並べる（2026-11-15 ko-dai さんの指示）。押すと1つ入る。「›」の付いた品物は、押すとサブメニュー（下の subDlg）が出る。
+       ハンバーグBOXはソースごとのボタン。唐揚げ・ポテト・ミニサラダのセットは、別の品物のボタン。ボタンは js/store.js の paintTiles が描く -->
   <fieldset class="f-item">
-    <legend>品物</legend>
-    <select id="pItem" aria-label="品物"></select>
-    <div id="pOpts"></div>
-    <div class="f-add">
-      <!-- 数は＋と−のボタンで選ぶ（2026-11-15 ko-dai さんの指示）。大きな数は、まん中の数を押して打ち込むこともできる -->
-      <div class="f-qty"><span>数</span><span class="qty-step"><button type="button" class="st-btn" data-qty="-1" aria-label="1つ減らす" disabled>−</button><input id="pQty" type="number" min="1" max="99" value="1" inputmode="numeric" aria-label="数"><button type="button" class="st-btn" data-qty="1" aria-label="1つ増やす">＋</button></span></div>
-      <button type="button" id="pAdd" class="b-sub">＋ 入れる</button>
-    </div>
+    <legend>品物（押すと入ります。「›」の付いた品物は、選ぶものが出ます）</legend>
+    <div id="pTiles" class="p-tiles"></div>
   </fieldset>
   <ul id="pLines" class="p-lines"></ul>
   <p class="f-total"><span>合計（店頭で支払い）</span><b id="pTotal">¥0</b></p>
@@ -187,6 +193,6 @@
 <script src="https://t3dining.github.io/baguru-app/js/content.js?v=86d4c182"></script>
 <!-- 受け口とのやりとり（公式アプリと同じもの。切り替え ORDERS_ONLINE・受け口の場所・送り方）。公式アプリのセッションの持ち物 -->
 <script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=70c5663d"></script>
-<script src="js/store.js?v=7042c635"></script>
+<script src="js/store.js?v=a8e26f46"></script>
 </body>
 </html>

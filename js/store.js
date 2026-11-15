@@ -21,7 +21,11 @@ const NEXT = {
 };
 const BACK = { accepted: 'new', ready: 'accepted', done: 'ready' };
 // 申請（配達・大量注文）は、承認したら accepted。戻すと申請に戻る
-const backOf = o => o.status === 'accepted' && isRequest(o) ? 'request' : BACK[o.status];
+// お客様のアプリからの配達・大量注文の申請か（承認して決まる注文）。★予約注文で入れた配達（2026-11-15 から）は、申請でなく、はじめから受け付けた形。
+// 公式アプリの isRequest（../js/common.js）は種類（配達・大量注文）だけで見るので、Order受付では経路も見る（予約注文の経路は「予約」。前の注文は「電話」「店頭」）
+// ★返事をしていない申請（status が request）は、経路にかかわらず申請として出す
+const appRequest = o => isRequest(o) && (o.status === 'request' || !['予約', '電話', '店頭'].includes(o.route));
+const backOf = o => o.status === 'accepted' && appRequest(o) ? 'request' : BACK[o.status];
 const nextLabel = o => o.kind === 'delivery' && o.status === 'ready' ? 'お届け済み' : NEXT[o.status]?.label;
 // 受け付けた・承認したが、まだ調理を始める前（受け取り・お届けの TAKEOUT.cookBefore 分前まで）の注文は「受付済み」に置く。その時刻を過ぎると「調理中」に移る。
 // 「できしだい」は、受け付けたらすぐ調理中。見分けは common.js の isBooked（お客さまの画面の「受付済み」と同じ。2026-10-30 ko-dai さん）
@@ -321,9 +325,11 @@ function daysAhead(t, now = new Date()) {
 
 /** カードのいちばん上の帯：本日の受け取りか、明日より先か（2026-10-30 ko-dai さんの指示。注文が入ったときに、ひと目でわかるように）。
  *  進めている注文（受付待ち・申請・受付済み・調理中・できあがり）にだけ付ける */
+// 配達の注文は「お届け」でなく「配達」と出す（2026-11-15 ko-dai さんの指示。予約注文の窓の「配達時間」とそろえた）。公式アプリの whenWord（../js/common.js）は変えない
+const whenOf = o => o.kind === 'delivery' ? '配達' : '受け取り';
 function dayStrip(o, t) {
   const d = daysAhead(t);
-  const word = `の${whenWord(o)}${o.status === 'request' ? '（希望）' : ''}`;
+  const word = `の${whenOf(o)}${o.status === 'request' ? '（希望）' : ''}`;
   if (d === 0) return `<div class="c-day today">本日${word}</div>`;
   const text = d === 1 ? `明日 ${mdw(t)}${word}` : d > 1 ? `${mdw(t)}${word}・${d}日後` : `${mdw(t)}${word}（過ぎた日）`;
   return `<div class="c-day later">${text}</div>`;
@@ -422,6 +428,10 @@ function priceCheck(o) {
 
 /** カトラリーの有無（2026-11-01 ko-dai さんの指示。お客様が公式アプリで選ぶ）。o.cutlery が true なら付ける、false なら付けない。
  *  聞いていない注文（電話・店頭、前からの注文）は何も出さない */
+/** 領収書（2026-11-15。予約注文の配達で入れる）。o.receipt：'none' なし／'to' 宛名あり（o.receiptTo）／'later' 宛名は後日連絡。聞いていない注文は何も出さない */
+const receipt = o => o.receipt === undefined ? ''
+  : o.receipt === 'none' ? '<p class="c-rcpt no">領収書なし</p>'
+  : `<p class="c-rcpt">🧾 領収書あり：${o.receipt === 'later' ? '宛名は後日連絡' : `宛名「${esc(o.receiptTo)}」`}</p>`;
 const cutlery = o => o.cutlery === true ? `<p class="c-cut yes">🍴 カトラリーを付ける${o.cutleryN ? `（${o.cutleryN}個）` : ''}</p>`
   : o.cutlery === false ? '<p class="c-cut no">✕ カトラリーは付けない</p>' : '';
 
@@ -452,29 +462,32 @@ function card(o) {
   // 受付済みでも、今日の分は早くできたときのために「調理完了」を出す。明日より先の分は出さない
   const next = isBooked(o) && !isToday ? null : NEXT[o.status];
   const back = backOf(o);
-  const map = o.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.address)}` : '';
+  const place = [o.address, o.address2].filter(Boolean).join(' ');   // 予約注文の配達は、会社名・建物名だけのこともある
+  const map = place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}` : '';
   const tags = [
-    isRequest(o) ? `<span class="c-kind k-${o.kind}">${KIND[o.kind]}・${o.meals || 0}食</span>` : '',
-    isRequest(o) && needsFee(o) && o.fee == null ? '<span class="c-kind k-ask">要相談・配達料</span>' : '',
+    appRequest(o) ? `<span class="c-kind k-${o.kind}">${o.kind === 'delivery' ? '🚚 ' : ''}${KIND[o.kind]}・${o.meals || 0}食</span>` : '',
+    !appRequest(o) && o.kind === 'delivery' ? '<span class="c-kind k-delivery">🚚 配達</span>' : '',   // 予約注文の配達（2026-11-15 ko-dai さんの指示。受付済みなどでも、ひと目で分かるように）
+    appRequest(o) && needsFee(o) && o.fee == null ? '<span class="c-kind k-ask">要相談・配達料</span>' : '',
     cookNow.has(o.id) ? '<span class="c-kind k-cook">🔔 調理開始</span>' : '',
     o.asap ? '<span class="c-kind k-asap">今から受け取る</span>' : '',   // 前は「できしだい」（2026-11-06 ko-dai さんの指示で、お客さまのアプリ・予約ボードとそろえた）
     o.route && o.route !== 'アプリ' ? `<span class="c-kind k-route">${esc(o.route)}</span>` : '',   // 予約注文（いまは「予約」。前の注文は「電話」「店頭」）
   ].join('');
   const pay = o.kind !== 'delivery' ? '（店頭で支払い）'
-    : `（お届けのときに現金で${o.fee != null ? `・配達料 ${yen(o.fee)} は別` : needsFee(o) ? '・配達料は承認のときに決めます' : ''}）`;
+    : `（お届けのときに現金で${o.fee != null ? `・配達料 ${yen(o.fee)} は別` : needsFee(o) && appRequest(o) ? '・配達料は承認のときに決めます' : ''}）`;   // 予約注文の配達は、申請でないので承認が無い
   return `<article class="card ${fresh.has(o.id) ? 'fresh' : ''} ${cookNow.has(o.id) ? 'cook-now' : ''} ${late ? 'late' : ''} ${o.kind === 'delivery' ? 'is-delivery' : ''}">
       ${live ? dayStrip(o, t) : ''}
       <div class="c-top">
         <b class="c-no">${esc(o.no)}</b>
-        <div class="c-time"><small>${live ? '' : `${isToday ? '今日' : mdw(t)} `}${whenWord(o)}${o.status === 'request' ? '（希望）' : ''}</small><b>${hhmm(t)}${o.asap ? '<i>頃</i>' : ''}</b>${ACTIVE.includes(o.status) && o.status !== 'request' ? `<em>${untilText(o.pickupAt)}</em>` : ''}</div>
+        <div class="c-time"><small>${live ? '' : `${isToday ? '今日' : mdw(t)} `}${whenOf(o)}${o.status === 'request' ? '（希望）' : ''}</small><b>${hhmm(t)}${o.asap ? '<i>頃</i>' : ''}</b>${ACTIVE.includes(o.status) && o.status !== 'request' ? `<em>${untilText(o.pickupAt)}</em>` : ''}</div>
       </div>
       ${tags ? `<div class="c-tags">${tags}</div>` : ''}
       <div class="c-who"><b>${esc(who(o))}</b>${o.tel ? `<a href="tel:${esc(o.tel)}">${esc(o.tel)}</a>` : ''}</div>
-      ${o.kind === 'delivery' ? `<p class="c-addr">お届け先：${esc(o.address)}${o.address2 ? `　${esc(o.address2)}` : ''}<a href="${map}" target="_blank" rel="noopener">地図</a></p>` : ''}
+      ${o.kind === 'delivery' ? `<p class="c-addr">配達先：${esc([o.address, o.address2].filter(Boolean).join('　'))}${map ? `<a href="${map}" target="_blank" rel="noopener">地図</a>` : ''}</p>` : ''}
       <ul class="c-lines">${o.lines.map(l => `
         <li><b>${esc(l.name)}</b><span class="q">×${l.qty}</span>${shownOpts(l).length ? `<div class="c-opts">${shownOpts(l).map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}</li>`).join('')}
       </ul>
       ${cutlery(o)}
+      ${receipt(o)}
       ${o.memo ? `<p class="c-memo">ご要望：${esc(o.memo)}</p>` : ''}
       <div class="c-sum"><span>合計${pay}</span><b>${yen(o.total)}</b></div>
       ${priceCheck(o)}
@@ -702,7 +715,7 @@ function openDecide(o, approve) {
   const t = new Date(o.pickupAt);
   const fee = approve && needsFee(o);
   $('#dTitle').textContent = `${KIND[o.kind]}の申請 ${o.no} を${approve ? '承認する' : 'お断りする'}`;
-  $('#dWho').textContent = `${who(o)}・${mdw(t)} ${hhmm(t)} ${whenWord(o)}・${o.meals || 0}食・${yen(o.total)}`;
+  $('#dWho').textContent = `${who(o)}・${mdw(t)} ${hhmm(t)} ${whenOf(o)}・${o.meals || 0}食・${yen(o.total)}`;
   $('#dFeeRow').hidden = !fee;
   $('#dFee').value = o.fee ?? '';
   $('#dMsg').value = o.shopMsg || '';
@@ -758,6 +771,12 @@ function openPhone() {
   paintQty();
   $$('input[name="pCut"]').forEach(x => { x.checked = false; });   // カトラリーは、はじめはどちらも選ばない（必ず選んでもらう）
   paintCut();
+  // 配達（2026-11-15）：はじめは「店頭で受け取り」。配達先・領収書は空
+  const pk = $('input[name="pKind"][value="pickup"]'); if (pk) pk.checked = true;
+  ['#pAddr', '#pAddr2', '#pRcptTo'].forEach(s => { if ($(s)) $(s).value = ''; });
+  $$('input[name="pRcpt"]').forEach(x => { x.checked = false; });
+  if ($('#pRcptLater')) $('#pRcptLater').checked = false;
+  paintKind();
   $('#pSend').disabled = false;
   paintOpts();
   paintPhone();
@@ -978,7 +997,15 @@ function withCutN(o) {
   const f = String(o.memo || '').match(/^カトラリー(あり|なし)(?:／|$)/);   // 試作の注文（fromServer を通らない）
   return f ? { ...o, cutlery: f[1] === 'あり', memo: o.memo.slice(f[0].length) } : o;
 }
-const fromStore = o => withCutN(fromServer(o));
+/* 領収書（2026-11-15 ko-dai さんの指示「配達モードでは…領収書の有無とありの場合は宛名（後日連絡ありを選べるようにする）」）。
+   受け口には、ご要望の頭（カトラリーのあと）に「領収書なし」「領収書あり（宛名：○○）」「領収書あり（宛名は後日連絡）」と付けて送る。読むときはここで外す */
+const RCPT = /^領収書(?:(なし)|あり（宛名は後日連絡）|あり（宛名：(.*?)）)(?:／|$)/;
+function withRcpt(o) {
+  const m = String(o.memo || '').match(RCPT);
+  if (!m) return o;
+  return { ...o, receipt: m[1] ? 'none' : m[2] !== undefined ? 'to' : 'later', receiptTo: m[2] || '', memo: o.memo.slice(m[0].length) };
+}
+const fromStore = o => withRcpt(withCutN(fromServer(o)));
 function paintCut() {
   const row = $('#pCutRow');
   if (!row) return;   // 前の版の画面
@@ -993,6 +1020,25 @@ $$('input[name="pCut"]').forEach(x => x.addEventListener('change', () => {
   phoneErr('');
 }));
 $('#pCutN')?.addEventListener('change', paintCut);
+
+/* 店頭で受け取りか、配達か（2026-11-15 ko-dai さんの指示「予約注文タブで配達を選べるように」）。
+   配達のときは、配達先（住所・会社名や建物名）と領収書の欄を出し、日時の名前を「配達の日」「配達時間」にする（時刻は配達が終わる時刻）。
+   受け口には kind: 'delivery'・address・address2 で送る（受け口の saveOrder は前から受けられる。受け口は変えていない）。配達料は入れない */
+const phoneKind = () => $('input[name="pKind"]:checked')?.value === 'delivery' ? 'delivery' : 'pickup';
+function paintKind() {
+  const deliv = phoneKind() === 'delivery';
+  if ($('#pDeliv')) $('#pDeliv').hidden = !deliv;
+  if ($('#pDayLbl')) $('#pDayLbl').textContent = deliv ? '配達の日' : '受け取りの日';
+  if ($('#pHmLbl')) $('#pHmLbl').textContent = deliv ? '配達時間' : '時刻';
+  if ($('#pTotalLbl')) $('#pTotalLbl').textContent = deliv ? '合計（配達のときに支払い）' : '合計（店頭で支払い）';
+  const row = $('#pRcptRow');
+  if (row) {
+    row.hidden = !(deliv && $('input[name="pRcpt"]:checked')?.value === 'yes');
+    $('#pRcptTo').disabled = !!$('#pRcptLater')?.checked;   // 後日連絡なら、宛名は入れない
+  }
+}
+$$('input[name="pKind"], input[name="pRcpt"]').forEach(x => x.addEventListener('change', () => { paintKind(); phoneErr(''); }));
+$('#pRcptLater')?.addEventListener('change', () => { paintKind(); phoneErr(''); });
 $('#phoneDlg').addEventListener('click', e => {
   const b = e.target.closest('[data-cq]');
   if (!b || b.disabled) return;
@@ -1015,7 +1061,7 @@ document.addEventListener('click', e => {   // 予約注文の窓とサブメニ
 /* 窓を閉じる（2026-11-15 ko-dai さんの指示「やめるを閉じるに変更し、まわりの余白部分を押しても閉じるように」）。
    「閉じる」のボタンと、窓のまわりの暗いところを押したとき。★予約注文は、品物・お名前・電話・ご要望を入れかけているときだけ、
    間違えて押して消えないよう「閉じますか？」と聞く（閉じると、次に開いたときは空から。Claude が足した） */
-const phoneDirty = () => !!phone && (phone.lines.length > 0 || ['#pName', '#pTel', '#pNote'].some(s => $(s)?.value.trim()));
+const phoneDirty = () => !!phone && (phone.lines.length > 0 || ['#pName', '#pTel', '#pNote', '#pAddr', '#pAddr2', '#pRcptTo'].some(s => $(s)?.value.trim()));
 function closeDlg(d) {
   if (!d?.open) return;
   if (d.id === 'phoneDlg' && phoneDirty() && !confirm('入れかけの予約注文は消えます。閉じますか？')) return;
@@ -1161,13 +1207,27 @@ $('#pSend').addEventListener('click', async () => {
   if (!/^0\d{9,10}$/.test(tel.replace(/[^\d]/g, ''))) return phoneErr('電話番号を確かめてください（0 で始まる10〜11けた）');
   if ($('#pItem')?.value) return phoneErr('選んだ品物を「＋ 入れる」で入れてください（入れないなら、品物を「品物を選んでください」に戻す）');
   if (!phone.lines.length) return phoneErr('品物を1つ以上入れてください（品物を選んで「＋ 入れる」）');
-  if (!$('#pDay').value || !$('#pHm').value || isNaN(at)) return phoneErr('受け取りの日と時刻を選んでください');
-  if (at < Date.now() - 5 * 60000) return phoneErr('受け取りの時刻が、もう過ぎています');
+  const kind = phoneKind();
+  if (!$('#pDay').value || !$('#pHm').value || isNaN(at)) return phoneErr(kind === 'delivery' ? '配達の日と配達時間を選んでください' : '受け取りの日と時刻を選んでください');
+  if (at < Date.now() - 5 * 60000) return phoneErr(kind === 'delivery' ? '配達時間が、もう過ぎています' : '受け取りの時刻が、もう過ぎています');
+  // 配達（2026-11-15 ko-dai さんの指示）：配達先は住所か会社名・建物名のどちらか。領収書は必ず選ぶ。ありなら宛名か「後日連絡」
+  const addr = $('#pAddr')?.value.trim() || '', addr2 = $('#pAddr2')?.value.trim() || '';
+  let rcptWord = '';
+  if (kind === 'delivery') {
+    if (!addr && !addr2) return phoneErr('配達先の住所か、会社名・建物名を入れてください');
+    const rc = $('input[name="pRcpt"]:checked')?.value, later = !!$('#pRcptLater')?.checked, to = $('#pRcptTo').value.trim();
+    if (!rc) return phoneErr('領収書の「あり」か「なし」を選んでください');
+    if (rc === 'yes' && !later && !to) return phoneErr('領収書の宛名を入れるか、「宛名は後日連絡」を選んでください');
+    rcptWord = rc === 'no' ? '領収書なし' : later ? '領収書あり（宛名は後日連絡）' : `領収書あり（宛名：${to}）`;
+  }
   // カトラリーのありなしは必ず選ぶ（2026-11-15 ko-dai さんの指示。公式アプリと同じ）。前の版の画面（カトラリーの欄が無い）のときは聞かない
   const cut = $('input[name="pCut"]:checked')?.value;
   if ($('#pCutSeg') && !cut) return phoneErr('カトラリー（お箸・スプーン）の「あり」か「なし」を選んでください');
   const cutWord = cut === 'yes' ? `カトラリーあり（${clampQty($('#pCutN').value)}個）` : cut === 'no' ? 'カトラリーなし' : '';
-  const row = { kind: 'pickup', asap: false, pickupAt: at.toISOString(), name, tel, route, note: [cutWord, $('#pNote').value.trim()].filter(Boolean).join('／'),
+  const note = [cutWord, rcptWord, $('#pNote').value.trim()].filter(Boolean).join('／');
+  if (note.length > 300) return phoneErr(`ご要望・メモが長すぎます（領収書の宛名などと合わせて300字まで。あと${note.length - 300}字短くしてください）`);
+  const row = { kind, asap: false, pickupAt: at.toISOString(), name, tel, route, note,
+    ...(kind === 'delivery' ? { address: addr, address2: addr2 } : {}),
     lines: phone.lines, meals: phoneMeals() };
   $('#pSend').disabled = true;
   const ok = await addPhoneOrder(row);
@@ -1188,7 +1248,7 @@ async function addPhoneOrder(row) {
   if (!ORDERS_ONLINE) {
     const now = new Date();
     const o = { id: 'o' + now.getTime(), no: nextOrderNo(now), date: dateKey(now), createdAt: now.toISOString(), status: 'accepted', ...row,
-      ...withCutN({ memo: row.note }), total: row.lines.reduce((s, l) => s + l.unit * l.qty, 0), times: { accepted: now.toISOString() } };
+      ...withRcpt(withCutN({ memo: row.note })), total: row.lines.reduce((s, l) => s + l.unit * l.qty, 0), times: { accepted: now.toISOString() } };
     known?.set(o.id, o.status);   // 自分で入れた注文には「新しい」の印を付けない
     saveOrders([...getOrders(), o]);
     render();

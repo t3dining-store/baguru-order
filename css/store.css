@@ -220,6 +220,23 @@ button { font: inherit; cursor: pointer; border: 0; }
 .st-val { min-width: 128px; text-align: center; font-size: 15px; font-weight: 800; }
 .p-q { display: inline-flex; align-items: center; gap: 6px; }
 #pCutSeg { margin-bottom: 8px; }
+/* 予約注文の配達（2026-11-15 ko-dai さんの指示） */
+#pKindSeg { margin-bottom: 14px; }
+#pKindSeg span { padding: 12px 6px; font-size: 16px; }
+#pKindSeg input[value="delivery"]:checked + span { background: #2f5fa3; }
+#pDeliv { margin: 0 0 12px; padding: 10px 12px 2px; border-radius: 12px; background: #eef4fc; border: 1.5px solid #9fb8e3; }
+#pDeliv[hidden] { display: none; }
+#pRcptSeg { margin-bottom: 8px; }
+.rcpt-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rcpt-row[hidden] { display: none; }
+.rcpt-row input[type=text], .dlg .rcpt-row #pRcptTo { flex: 1 1 200px; width: auto; }
+.dlg .rcpt-row #pRcptTo:disabled { background: var(--soft); color: var(--sub); }
+.rcpt-later { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.rcpt-later input { width: 20px; height: 20px; }
+/* 配達の注文のカード（2026-11-15 ko-dai さんの指示「受付済みに入ったとき色分けと配達の文字が入るように」）。どの列でも、青みの地と左の青い線 */
+.card.is-delivery { background: #eef4fc; box-shadow: inset 6px 0 0 #2f5fa3, 0 1px 2px rgba(15, 40, 28, .1); }
+.c-rcpt { margin: 8px 0 0; padding: 5px 10px; border-radius: 8px; background: #fff8e6; color: #6b4e10; font-size: 13.5px; font-weight: 700; }
+.c-rcpt.no { background: var(--soft); color: var(--sub); font-weight: 600; }
 /* 予約注文の品物のボタン（2026-11-15 ko-dai さんの指示。USEN のハンディのように）。右上の丸は入れた数、「›」はサブメニューが出る品物 */
 .dlg.p-dlg { width: min(900px, calc(100% - 24px)); }
 .p-tiles { display: flex; flex-direction: column; gap: 10px; }

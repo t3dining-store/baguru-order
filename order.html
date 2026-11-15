@@ -28,7 +28,7 @@
 <link rel="manifest" href="manifest-store.json">
 <link rel="icon" href="img/store-icon-192.png">
 <link rel="apple-touch-icon" href="img/store-apple-touch-icon.png">
-<link rel="stylesheet" href="css/store.css?v=9502f92b">
+<link rel="stylesheet" href="css/store.css?v=1e900484">
 </head>
 <body>
 <header class="s-top">
@@ -155,14 +155,38 @@
 <!-- 予約注文を入れる（2026-11-04 に「電話・店頭の注文」から名前を変え、電話か店頭かの選択を外した。ko-dai さんの指示）。受け付けた形で入り、お客様のアプリには出ない -->
 <dialog id="phoneDlg" class="dlg wide p-dlg">
   <h3>予約注文を入れる</h3>
+  <!-- 店頭で受け取りか、配達か（2026-11-15 ko-dai さんの指示「予約注文タブで配達を選べるように」）。配達のときは、配達先・領収書の欄が出て、日時は「配達の日」「配達時間」になる -->
+  <div id="pKindSeg" class="seg">
+    <label><input type="radio" name="pKind" value="pickup" checked><span>店頭で受け取り</span></label>
+    <label><input type="radio" name="pKind" value="delivery"><span>🚚 配達</span></label>
+  </div>
   <div class="f-grid">
     <label class="f-field"><span>お名前</span><input id="pName" maxlength="40" autocomplete="off"></label>
     <label class="f-field"><span>電話番号</span><input id="pTel" type="tel" inputmode="tel" maxlength="20" autocomplete="off"></label>
   </div>
   <!-- 受け取りの日と時刻は、必ず選んでもらう（2026-11-04 ko-dai さんの指示。「できしだい」は外した。はじめは空） -->
   <div id="pTime" class="f-grid">
-    <label class="f-field"><span>受け取りの日</span><input id="pDay" type="date"></label>
-    <label class="f-field"><span>時刻</span><input id="pHm" type="time" step="300"></label>
+    <label class="f-field"><span id="pDayLbl">受け取りの日</span><input id="pDay" type="date"></label>
+    <label class="f-field"><span id="pHmLbl">時刻</span><input id="pHm" type="time" step="300"></label>
+  </div>
+  <!-- 配達のときだけ（2026-11-15 ko-dai さんの指示）。配達先は、住所か会社名・建物名のどちらかを必ず入れる。領収書は必ず「あり」か「なし」を選ぶ。
+       ありのときは宛名を入れるか「宛名は後日連絡」。領収書は、ご要望の頭に「領収書あり（宛名：○○）」などと付けて送る（js/store.js の pSend・withRcpt） -->
+  <div id="pDeliv" hidden>
+    <div class="f-grid">
+      <label class="f-field"><span>配達先の住所</span><input id="pAddr" maxlength="120" autocomplete="off"></label>
+      <label class="f-field"><span>会社名・建物名など</span><input id="pAddr2" maxlength="120" autocomplete="off"></label>
+    </div>
+    <p class="f-note">配達先は、住所か会社名・建物名のどちらかを入れてください。</p>
+    <div class="f-field"><span>領収書</span>
+      <div id="pRcptSeg" class="seg">
+        <label><input type="radio" name="pRcpt" value="yes"><span>あり</span></label>
+        <label><input type="radio" name="pRcpt" value="no"><span>なし</span></label>
+      </div>
+      <div id="pRcptRow" class="rcpt-row" hidden>
+        <input id="pRcptTo" maxlength="40" autocomplete="off" aria-label="領収書の宛名" placeholder="宛名">
+        <label class="rcpt-later"><input type="checkbox" id="pRcptLater"><span>宛名は後日連絡</span></label>
+      </div>
+    </div>
   </div>
   <!-- 品物は、USEN のハンディのようにボタンを並べる（2026-11-15 ko-dai さんの指示）。押すと1つ入る。「›」の付いた品物は、押すとサブメニュー（下の subDlg）が出る。
        ハンバーグBOXはソースごとのボタン。唐揚げ・ポテト・ミニサラダのセットは、別の品物のボタン。ボタンは js/store.js の paintTiles が描く -->
@@ -171,7 +195,7 @@
     <div id="pTiles" class="p-tiles"></div>
   </fieldset>
   <ul id="pLines" class="p-lines"></ul>
-  <p class="f-total"><span>合計（店頭で支払い）</span><b id="pTotal">¥0</b></p>
+  <p class="f-total"><span id="pTotalLbl">合計（店頭で支払い）</span><b id="pTotal">¥0</b></p>
   <!-- カトラリー（お箸・スプーン）のありなしと、ありのときの個数（2026-11-15 ko-dai さんの指示）。必ずどちらかを選ぶ（公式アプリの「お箸・スプーンの有無」と同じ）。
        受け口には、ご要望の頭に「カトラリーあり（3個）」「カトラリーなし」と付けて送る（js/store.js の pSend・withCutN） -->
   <div class="f-field"><span>カトラリー（お箸・スプーン）</span>
@@ -181,7 +205,7 @@
     </div>
     <div id="pCutRow" class="f-qty" hidden><span>個数</span><span class="qty-step"><button type="button" class="st-btn" data-cq="-1" aria-label="1つ減らす">−</button><input id="pCutN" type="number" min="1" max="99" value="1" inputmode="numeric" aria-label="カトラリーの個数"><button type="button" class="st-btn" data-cq="1" aria-label="1つ増やす">＋</button></span></div>
   </div>
-  <!-- ご要望は280字まで（頭にカトラリーの字を付けても、受け口の300字に収まるように。2026-11-15） -->
+  <!-- ご要望は280字まで（頭にカトラリーの字を付けても、受け口の300字に収まるように。2026-11-15）。配達で領収書の宛名も付けて300字を超えるときは、送る前に知らせる -->
   <label class="f-field"><span>ご要望・メモ</span><textarea id="pNote" rows="2" maxlength="280"></textarea></label>
   <p id="pErr" class="dlg-err" hidden></p>
   <div class="dlg-btns"><button type="button" class="b-sub" data-close>閉じる</button><button type="button" id="pSend" class="b-main">この注文を入れる</button></div>
@@ -194,6 +218,6 @@
 <script src="https://t3dining.github.io/baguru-app/js/content.js?v=86d4c182"></script>
 <!-- 受け口とのやりとり（公式アプリと同じもの。切り替え ORDERS_ONLINE・受け口の場所・送り方）。公式アプリのセッションの持ち物 -->
 <script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=70c5663d"></script>
-<script src="js/store.js?v=0e24a16f"></script>
+<script src="js/store.js?v=ca0d82d6"></script>
 </body>
 </html>

@@ -496,6 +496,7 @@ function card(o) {
       ${o.status === 'canceled' ? `<p class="c-cancel">取り消し（${esc(o.canceledBy || '')}）</p>` : ''}
       ${o.status === 'declined' ? `<p class="c-cancel">お断りしました${o.shopMsg || o.declineNote ? `（${esc(o.shopMsg || o.declineNote)}）` : ''}</p>` : ''}
       ${canAdjust(o) ? `<button class="b-time" data-act="time" data-id="${esc(o.id)}">🕐 できあがり時間を調整</button>` : ''}
+      ${canEdit(o) ? `<button class="b-edit" data-act="edit" data-id="${esc(o.id)}">✎ 内容を直す（配達に変えるなど）</button>` : ''}
       <div class="c-btns">
         ${o.status === 'request' ? `
           <button class="b-sub danger" data-act="decline" data-id="${esc(o.id)}">お断りする</button>
@@ -639,6 +640,7 @@ document.addEventListener('click', async e => {
   const act = b.dataset.act;
   if (act === 'approve' || act === 'decline') return openDecide(o, act === 'approve');
   if (act === 'time') return openTime(o);
+  if (act === 'edit') return openPhone(o);
   let patch = null;
   if (act === 'next' && NEXT[o.status]) patch = { status: NEXT[o.status].to };
   if (act === 'back' && backOf(o)) patch = { status: backOf(o) };
@@ -755,8 +757,21 @@ let phone = null;   // 入れている注文 { lines: [{ id, name, opts, unit, q
 const phoneMeals = () => mealCount(phone.lines);
 function phoneErr(text) { $('#pErr').textContent = text; $('#pErr').hidden = !text; }
 
-function openPhone() {
-  phone = { lines: [], rid: Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10) };
+/* 予約注文を直す（2026-11-15 ko-dai さんの指示「今受付済みに入っている注文を配達モードに変えれますか？」）。
+   予約注文（経路が予約・電話・店頭。お客様のアプリには出ない注文）のカードに「✎ 内容を直す」を出し、押すと予約注文の窓を今の内容で開く。
+   受け取り⇔配達・配達先・領収書・配達料・日時・品物・カトラリー・お名前・電話・ご要望を直して「この内容に直す」で保存する（受け口の saveOrder に id と expect）。
+   お客様のアプリからの注文は、お客様の画面にも出るので直さない（Claude が決めた）。受付待ち・受付済み・調理中・調理完了のあいだだけ */
+const canEdit = o => ['予約', '電話', '店頭'].includes(o.route) && ['new', 'accepted', 'ready'].includes(o.status);
+/** 入っている行が、どの品物のボタンのものか（ボタンの右上の数のため） */
+function tileOf(l) {
+  if (SET_BY_ID[l.id]) return l.id;
+  const sg = ITEM_BY_ID[l.id]?.groups.find(g => g.id === 'sauce');
+  const k = sg ? sg.choices.findIndex(c => (l.opts || []).some(t => sameOpt(c.n, t))) : -1;
+  return k >= 0 ? `${l.id}#${k}` : l.id;
+}
+function openPhone(o = null) {
+  phone = { lines: o ? o.lines.map(l => ({ ...l, opts: [...(l.opts || [])], tile: tileOf(l) })) : [], rid: Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10),
+    edit: o ? { id: o.id, updatedAt: o.updatedAt, pickupAt: o.pickupAt } : null };
   $('input[name="pRoute"]')?.closest('.seg')?.remove();   // 前の画面（電話か店頭かを選ぶ形）が、端末にまだ残っているとき
   // 受け取りの日と時刻は、はじめは空にして必ず選んでもらう（2026-11-04 ko-dai さんの指示。「できしだい」は外した）
   ['#pName', '#pTel', '#pNote', '#pDay', '#pHm'].forEach(s => { $(s).value = ''; });
@@ -778,6 +793,24 @@ function openPhone() {
   if ($('#pRcptLater')) $('#pRcptLater').checked = false;
   if ($('#pFeeN')) $('#pFeeN').value = 0;
   paintKind();
+  if (o) {   // 直すとき：今の内容を入れる
+    const t = new Date(o.pickupAt), pick = (name, v) => { const x = $(`input[name="${name}"][value="${v}"]`); if (x) x.checked = true; };
+    $('#pName').value = o.name || '';
+    $('#pTel').value = o.tel || '';
+    $('#pDay').value = dateKey(t);
+    $('#pHm').value = hhmm(t);
+    if ($('#pDay').value < $('#pDay').min) $('#pDay').min = $('#pDay').value;
+    $('#pNote').value = o.memo || '';
+    pick('pKind', o.kind === 'delivery' ? 'delivery' : 'pickup');
+    if ($('#pAddr')) { $('#pAddr').value = o.address || ''; $('#pAddr2').value = o.address2 || ''; }
+    if (o.cutlery !== undefined) { pick('pCut', o.cutlery ? 'yes' : 'no'); if (o.cutlery && $('#pCutN')) $('#pCutN').value = o.cutleryN || 1; }
+    if (o.receipt && $('#pRcptTo')) { pick('pRcpt', o.receipt === 'none' ? 'no' : 'yes'); $('#pRcptLater').checked = o.receipt === 'later'; $('#pRcptTo').value = o.receiptTo || ''; }
+    if (o.fee != null && $('#pFeeN')) { pick('pFee', Number(o.fee) > 0 ? 'yes' : 'no'); $('#pFeeN').value = Number(o.fee) || 0; }
+    paintCut();
+    paintKind();
+  }
+  if ($('#pTitle')) $('#pTitle').textContent = o ? `予約注文を直す（${o.no}）` : '予約注文を入れる';
+  $('#pSend').textContent = o ? 'この内容に直す' : 'この注文を入れる';
   $('#pSend').disabled = false;
   paintOpts();
   paintPhone();
@@ -936,7 +969,7 @@ function paintPhone() {
   paintFee();     // 配達料を足したお支払い
 }
 
-$('#phoneBtn').addEventListener('click', openPhone);
+$('#phoneBtn').addEventListener('click', () => openPhone());
 $('#pItem')?.addEventListener('change', () => { paintOpts(); phoneErr(''); });
 $('#pAdd').addEventListener('click', () => {
   if (TILES) {   // サブメニューの「入れる」
@@ -1091,7 +1124,7 @@ document.addEventListener('click', e => {   // 予約注文の窓とサブメニ
 const phoneDirty = () => !!phone && (phone.lines.length > 0 || ['#pName', '#pTel', '#pNote', '#pAddr', '#pAddr2', '#pRcptTo'].some(s => $(s)?.value.trim()));
 function closeDlg(d) {
   if (!d?.open) return;
-  if (d.id === 'phoneDlg' && phoneDirty() && !confirm('入れかけの予約注文は消えます。閉じますか？')) return;
+  if (d.id === 'phoneDlg' && !phone?.edit && phoneDirty() && !confirm('入れかけの予約注文は消えます。閉じますか？')) return;   // 直しているときは聞かない（閉じても注文は元のまま）
   d.close();
 }
 $$('dialog [data-close]').forEach(b => b.addEventListener('click', () => closeDlg(b.closest('dialog'))));
@@ -1104,7 +1137,7 @@ $$('dialog').forEach(d => {
     closeDlg(d);
   });
   // キーボードの Esc も同じ（予約注文の入れかけは聞く）
-  d.addEventListener('cancel', e => { if (d.id === 'phoneDlg' && phoneDirty()) { e.preventDefault(); closeDlg(d); } });
+  d.addEventListener('cancel', e => { if (d.id === 'phoneDlg' && !phone?.edit && phoneDirty()) { e.preventDefault(); closeDlg(d); } });
 });
 
 /* ---------------------------------------------------------------------
@@ -1236,7 +1269,8 @@ $('#pSend').addEventListener('click', async () => {
   if (!phone.lines.length) return phoneErr('品物を1つ以上入れてください（品物を選んで「＋ 入れる」）');
   const kind = phoneKind();
   if (!$('#pDay').value || !$('#pHm').value || isNaN(at)) return phoneErr(kind === 'delivery' ? '配達の日と配達時間を選んでください' : '受け取りの日と時刻を選んでください');
-  if (at < Date.now() - 5 * 60000) return phoneErr(kind === 'delivery' ? '配達時間が、もう過ぎています' : '受け取りの時刻が、もう過ぎています');
+  const sameTime = !!phone.edit && at.getTime() === new Date(phone.edit.pickupAt).getTime();   // 直すとき、時刻を変えていなければ過ぎていても通す
+  if (at < Date.now() - 5 * 60000 && !sameTime) return phoneErr(kind === 'delivery' ? '配達時間が、もう過ぎています' : '受け取りの時刻が、もう過ぎています');
   // 配達（2026-11-15 ko-dai さんの指示）：配達先は住所か会社名・建物名のどちらか。領収書は必ず選ぶ。ありなら宛名か「後日連絡」
   const addr = $('#pAddr')?.value.trim() || '', addr2 = $('#pAddr2')?.value.trim() || '';
   let rcptWord = '';
@@ -1259,6 +1293,19 @@ $('#pSend').addEventListener('click', async () => {
   const row = { kind, asap: false, pickupAt: at.toISOString(), name, tel, route, note,
     ...(kind === 'delivery' ? { address: addr, address2: addr2, ...($('#pFeeSeg') ? { fee: feeChoice() === 'yes' ? feeNow() : 0 } : {}) } : {}),
     lines: phone.lines, meals: phoneMeals() };
+  if (phone.edit) {   // 直す：受け口の saveOrder に id と、開いたときの更新日時（ほかの端末が先に変えていたら conflict）
+    const o = list().find(x => x.id === phone.edit.id);
+    if (!o) return phoneErr('この注文が見つかりませんでした。「↻ 更新」を押して確かめてください。');
+    const deliv = kind === 'delivery';
+    const patch = { kind, pickupAt: row.pickupAt, name, tel, note, lines: row.lines.map(({ tile, ...l }) => l), meals: row.meals,
+      address: deliv ? addr : '', address2: deliv ? addr2 : '', fee: deliv ? (row.fee ?? null) : null,
+      ...(ORDERS_ONLINE ? {} : withRcpt(withCutN({ memo: note }))) };   // 試作は、この端末の注文をそのまま直す
+    $('#pSend').disabled = true;
+    const ok = await change({ ...o, updatedAt: phone.edit.updatedAt }, patch);
+    $('#pSend').disabled = false;
+    if (ok) $('#phoneDlg').close();
+    return;
+  }
   $('#pSend').disabled = true;
   const ok = await addPhoneOrder(row);
   $('#pSend').disabled = false;

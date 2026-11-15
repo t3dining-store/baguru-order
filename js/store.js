@@ -748,6 +748,7 @@ function openPhone() {
   // 開いたときに、バグるマネージの値段・売り切れも読み直す（CONTENT_EVERY に1回まで）。まだ品物を選んでいなければ、並べ直す
   refreshContent().then(changed => { if (changed && $('#phoneDlg').open && !$('#pItem').value) paintItems(); });
   $('#pQty').value = 1;
+  paintQty();
   $('#pSend').disabled = false;
   paintOpts();
   paintPhone();
@@ -780,9 +781,12 @@ function paintOpts() {
     }
     if (g.type === 'count') {
       const c = g.choices[0];
-      // 打ち込む欄でなく、「なし」〜上限（data.js の max。追加カラアゲは3個）から選ぶ。上限より多くは選べない（2026-11-04 ko-dai さんの指示）。品物1つにつきの数
-      const counts = Array.from({ length: (g.max || 10) + 1 }, (_, n) => `<option value="${n}">${n ? `${n}個（+${yen(c.p * n)}）` : 'なし'}</option>`).join('');
-      return `<label class="f-opt"><span>${esc(g.name)}（${c.soldOut ? '売り切れ' : `1つにつき${g.max || 10}個まで`}）</span><select data-g="${esc(g.id)}" ${c.soldOut ? 'disabled' : ''}>${counts}</select></label>`;
+      // 「なし」〜上限（data.js の max。追加カラアゲは3個）を、＋と−のボタンで選ぶ（2026-11-15 ko-dai さんの指示。前は「なし・1個・2個・3個」の選ぶ欄）。
+      // 上限より多くは選べない（2026-11-04 ko-dai さんの指示）。品物1つにつきの数。数は data-g の欄（見えない）に持つ
+      return `<div class="f-opt"><span>${esc(g.name)}（${c.soldOut ? '売り切れ' : `1つにつき${g.max || 10}個まで`}）</span><span class="qty-step">`
+        + `<button type="button" class="st-btn" data-cnt="-1" data-for="${esc(g.id)}" aria-label="1個減らす" disabled>−</button>`
+        + `<input type="hidden" data-g="${esc(g.id)}" value="0"><b class="st-val" data-show="${esc(g.id)}">なし</b>`
+        + `<button type="button" class="st-btn" data-cnt="1" data-for="${esc(g.id)}" aria-label="1個増やす" ${c.soldOut ? 'disabled' : ''}>＋</button></span></div>`;
     }
     return '';
   }).join('');
@@ -801,7 +805,7 @@ function readSel(item) {
       const none = g.choices.findIndex(c => c.none);
       sel[g.id] = on.length ? on : none >= 0 ? [none] : [];
     }
-    if (g.type === 'count') sel[g.id] = Math.max(0, Math.min(g.max || 10, parseInt($(`#pOpts select[data-g="${g.id}"]`).value, 10) || 0));
+    if (g.type === 'count') sel[g.id] = Math.max(0, Math.min(g.max || 10, parseInt($(`#pOpts [data-g="${g.id}"]`).value, 10) || 0));   // 前の版の画面（選ぶ欄）でも読める
   }
   return sel;
 }
@@ -809,7 +813,7 @@ function readSel(item) {
 /** 入れた品物・合計・受け取りの時刻 */
 function paintPhone() {
   $('#pLines').innerHTML = phone.lines.length ? phone.lines.map((l, i) => `
-    <li><b>${esc(l.name)}</b><span class="q">×${l.qty}</span><span class="p-sum">${yen(l.unit * l.qty)}</span><button type="button" class="p-del" data-del="${i}" aria-label="消す">✕</button>${
+    <li><b>${esc(l.name)}</b><span class="p-q"><button type="button" class="st-btn sm" data-lq="-1" data-i="${i}" aria-label="1つ減らす" ${l.qty <= 1 ? 'disabled' : ''}>−</button><span class="q">×${l.qty}</span><button type="button" class="st-btn sm" data-lq="1" data-i="${i}" aria-label="1つ増やす" ${l.qty >= QTY_MAX ? 'disabled' : ''}>＋</button></span><span class="p-sum">${yen(l.unit * l.qty)}</span><button type="button" class="p-del" data-del="${i}" aria-label="消す">✕</button>${
       shownOpts(l).length ? `<small>${esc(shownOpts(l).join(' / '))}</small>` : ''}</li>`).join('') : '<li class="none">まだ品物がありません</li>';
   $('#pTotal').textContent = yen(phone.lines.reduce((s, l) => s + l.unit * l.qty, 0));
 }
@@ -822,19 +826,50 @@ $('#pAdd').addEventListener('click', () => {
   if (item.soldOut || item.hidden) return phoneErr('この品物は、いま売り切れです');
   const p = priceOf(item, readSel(item));
   if (p.missing) return phoneErr(`「${p.missing.name}」を選んでください`);
-  const qty = Math.max(1, Math.min(99, parseInt($('#pQty').value, 10) || 1));
+  const qty = clampQty($('#pQty').value);
   phone.lines.push({ id: item.id, name: item.full || item.name, opts: p.opts, unit: p.unit, qty });
   $('#pItem').value = '';
   $('#pQty').value = 1;
+  paintQty();
   paintOpts();
   paintPhone();
   phoneErr('');
 });
 $('#pLines').addEventListener('click', e => {
+  const q = e.target.closest('[data-lq]');
+  if (q && !q.disabled) {   // 入れた品物の数を＋−で直す（1より少なくはしない。消すときは ✕）
+    const l = phone.lines[Number(q.dataset.i)];
+    if (l) l.qty = clampQty(l.qty + Number(q.dataset.lq));
+    return paintPhone();
+  }
   const d = e.target.closest('[data-del]');
   if (!d) return;
   phone.lines.splice(Number(d.dataset.del), 1);
   paintPhone();
+});
+
+/* 数を＋と−のボタンで選ぶ（2026-11-15 ko-dai さんの指示「直接テイクアウトの注文を入力するとき、個数の選択をプラスマイナスボタンで選択できるように」）。
+   品物の数（#pQty。1〜99。まん中の数を押して打ち込むこともできる）と、追加カラアゲのような個数を選ぶもの（0〜上限）。入れた品物の数は上の #pLines */
+const QTY_MAX = 99;
+const clampQty = v => Math.max(1, Math.min(QTY_MAX, parseInt(v, 10) || 1));
+function paintQty() {
+  const q = clampQty($('#pQty').value);
+  $('#pQty').value = q;
+  $$('#phoneDlg [data-qty]').forEach(b => { b.disabled = Number(b.dataset.qty) < 0 ? q <= 1 : q >= QTY_MAX; });
+}
+$('#pQty').addEventListener('change', paintQty);
+$('#phoneDlg').addEventListener('click', e => {
+  const b = e.target.closest('[data-qty]');
+  if (b && !b.disabled) { $('#pQty').value = clampQty($('#pQty').value) + Number(b.dataset.qty); return paintQty(); }
+  const c = e.target.closest('[data-cnt]');
+  if (!c || c.disabled) return;
+  const item = ITEM_BY_ID[$('#pItem').value], g = item?.groups.find(x => x.id === c.dataset.for);
+  const box = $(`#pOpts [data-g="${CSS.escape(c.dataset.for)}"]`);
+  if (!g || !box) return;
+  const max = g.max || 10, n = Math.max(0, Math.min(max, (parseInt(box.value, 10) || 0) + Number(c.dataset.cnt))), ch = g.choices[0];
+  box.value = n;
+  $(`#pOpts [data-show="${CSS.escape(g.id)}"]`).textContent = n ? `${n}個（+${yen(ch.p * n)}）` : 'なし';
+  $$(`#pOpts [data-for="${CSS.escape(g.id)}"]`).forEach(x => { x.disabled = Number(x.dataset.cnt) < 0 ? n <= 0 : n >= max || !!ch.soldOut; });
 });
 $$('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
 
@@ -843,7 +878,7 @@ $$('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.close
  *  「各メニューとセット、アサイーの追加トッピングも設定できるように」。どのアプリで設定するかは、ko-dai さんが Order受付を選んだ）
  *  ・保存先は、バグるマネージの「売り切れ」と同じ（受け口の appContent の中身。items[商品id].soldOut と choices['グループid/名前'].soldOut）。
  *    どちらで切り替えても同じになる。公式アプリは js/content.js で重ねる（品切れは押せない・選べない）。
- *    ホームページのテイクアウトのページは、バグる HP のセッションが同じ中身を読んで出す（頼んだ）
+ *    ホームページのテイクアウトのページも、開いたときに同じ中身を読んで「売り切れ」を出す（バグる HP のセッションが作って公開した。ホームページの js/soldout.js）
  *  ・押したらすぐ保存する。最新の中身を読み、その印だけを変えて saveAppContent（expect）。ほかの端末（マネージ）が先に保存していたら、
  *    新しい中身にもう一度その印だけを入れて送り直す（ほかの直しを消さない）
  *  ・★マネージで保存していない直しがあるときに、ここで切り替えると、マネージの保存は「ほかの端末で、先に保存されていました」になる（マネージの直しは消える）

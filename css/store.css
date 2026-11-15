@@ -166,7 +166,10 @@ html, body, button, input, select, textarea, label, a, dialog, .seg span, .p-til
 .b-sub.danger { color: var(--red); background: var(--red-soft); }
 .b-main:disabled, .b-sub:disabled { opacity: .5; cursor: default; }
 .b-decline { background: var(--red); }
-.b-edit { width: 100%; height: 40px; margin-top: 8px; border-radius: 10px; background: #e7eefb; color: #2f5fa3; font-weight: 800; }   /* 予約注文の「内容を直す」（2026-11-15） */
+/* 予約注文の「内容を直す」（2026-11-15）。★1行に収める（ko-dai さんの指示。前の「✎ 内容を直す（配達に変えるなど）」は iPad で2行になった）。
+   字は「✎ 内容を直す・配達に変える」（配達の注文は「✎ 内容を直す」）。それでも入らない狭い画面では字を小さくし、最後は「…」で切る */
+.b-edit { width: 100%; height: 40px; margin-top: 8px; padding: 0 8px; border-radius: 10px; background: #e7eefb; color: #2f5fa3; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 901px) and (max-width: 1100px) { .b-edit { font-size: 14px; } }
 .b-time { width: 100%; height: 42px; margin-top: 8px; border-radius: 10px; background: var(--gold-soft); color: #6b4e10; font-weight: 800; }   /* できしだいの注文の、時間の調整 */
 
 /* 配達・大量注文の申請 */

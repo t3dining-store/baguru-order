@@ -496,7 +496,7 @@ function card(o) {
       ${o.status === 'canceled' ? `<p class="c-cancel">取り消し（${esc(o.canceledBy || '')}）</p>` : ''}
       ${o.status === 'declined' ? `<p class="c-cancel">お断りしました${o.shopMsg || o.declineNote ? `（${esc(o.shopMsg || o.declineNote)}）` : ''}</p>` : ''}
       ${canAdjust(o) ? `<button class="b-time" data-act="time" data-id="${esc(o.id)}">🕐 できあがり時間を調整</button>` : ''}
-      ${canEdit(o) ? `<button class="b-edit" data-act="edit" data-id="${esc(o.id)}">✎ 内容を直す（配達に変えるなど）</button>` : ''}
+      ${canEdit(o) ? `<button class="b-edit" data-act="edit" data-id="${esc(o.id)}">✎ 内容を直す${o.kind === 'delivery' ? '' : '・配達に変える'}</button>` : ''}
       <div class="c-btns">
         ${o.status === 'request' ? `
           <button class="b-sub danger" data-act="decline" data-id="${esc(o.id)}">お断りする</button>

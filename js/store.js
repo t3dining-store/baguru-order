@@ -139,7 +139,7 @@ async function staffPost(payload) {
 
 /** 受け口が返した注文の並び（orders の答え）を、画面の注文にする */
 function take(r) {
-  net.orders = (r.orders || []).map(fromServer);
+  net.orders = (r.orders || []).map(fromStore);
   net.accepting = r.accepting !== false;
   net.quick = Array.isArray(r.quick) ? r.quick : [];   // 前の版の受け口には quick が無い。そのときは何も出さない
   const added = quickNew().filter(q => !quickTold.has(q.id));
@@ -193,10 +193,10 @@ async function change(o, patch) {
   net.gen++;
   try {
     const r = await staffPost({ action: 'saveOrder', row: { id: o.id, ...patch }, expect: o.updatedAt });
-    put(fromServer(r.row));
+    put(fromStore(r.row));
     return true;
   } catch (e) {
-    if (e.data?.row) put(fromServer(e.data.row));   // 先に変わっていた（conflict）・順番が合わない（bad_status）ときは、受け口が今の様子を返す
+    if (e.data?.row) put(fromStore(e.data.row));   // 先に変わっていた（conflict）・順番が合わない（bad_status）ときは、受け口が今の様子を返す
     if (!quiet(e)) alert(staffText(e));
     return false;
   } finally {
@@ -415,7 +415,7 @@ function priceCheck(o) {
 
 /** カトラリーの有無（2026-11-01 ko-dai さんの指示。お客様が公式アプリで選ぶ）。o.cutlery が true なら付ける、false なら付けない。
  *  聞いていない注文（電話・店頭、前からの注文）は何も出さない */
-const cutlery = o => o.cutlery === true ? '<p class="c-cut yes">🍴 カトラリーを付ける</p>'
+const cutlery = o => o.cutlery === true ? `<p class="c-cut yes">🍴 カトラリーを付ける${o.cutleryN ? `（${o.cutleryN}個）` : ''}</p>`
   : o.cutlery === false ? '<p class="c-cut no">✕ カトラリーは付けない</p>' : '';
 
 /** 画面に出す選択（2026-11-02 ko-dai さんの指示）。ご飯の「並盛」とミートの「並」は公式アプリが注文に書かない（data.js の plain）ので、その字が無ければ「ご飯並盛」「ミート並」を足す。
@@ -749,6 +749,8 @@ function openPhone() {
   refreshContent().then(changed => { if (changed && $('#phoneDlg').open && !$('#pItem').value) paintItems(); });
   $('#pQty').value = 1;
   paintQty();
+  $$('input[name="pCut"]').forEach(x => { x.checked = false; });   // カトラリーは、はじめはどちらも選ばない（必ず選んでもらう）
+  paintCut();
   $('#pSend').disabled = false;
   paintOpts();
   paintPhone();
@@ -858,6 +860,40 @@ function paintQty() {
   $$('#phoneDlg [data-qty]').forEach(b => { b.disabled = Number(b.dataset.qty) < 0 ? q <= 1 : q >= QTY_MAX; });
 }
 $('#pQty').addEventListener('change', paintQty);
+
+/* カトラリー（お箸・スプーン）のありなしと、ありのときの個数（2026-11-15 ko-dai さんの指示「予約注文を入力するときにカトラリーのありなしと、ありの場合はその個数を選択できるように」）。
+   「あり」を選ぶと個数の欄が出る。はじめの個数は、入れた品物の食数（無ければ1）。個数は＋と−で選ぶ（1〜99。打ち込むこともできる）。
+   受け口には、ご要望の頭に「カトラリーあり（3個）」「カトラリーなし」と付けて送る。★公式アプリの fromServer（../js/order-api.js）は「カトラリーあり／なし」だけを読むので、
+   個数の付いた形は、ここの withCutN で読む（fromStore）。公式アプリのお客様の注文には個数が無い（いままでどおり） */
+const CUT_N = /^カトラリーあり（(\d{1,2})個）(?:／|$)/;
+function withCutN(o) {
+  if (o.cutlery !== undefined) return o;   // fromServer が「カトラリーあり／なし」を読んだ注文（公式アプリのお客様の注文）は、そのまま
+  const m = String(o.memo || '').match(CUT_N);
+  if (m) return { ...o, cutlery: true, cutleryN: Number(m[1]), memo: o.memo.slice(m[0].length) };
+  const f = String(o.memo || '').match(/^カトラリー(あり|なし)(?:／|$)/);   // 試作の注文（fromServer を通らない）
+  return f ? { ...o, cutlery: f[1] === 'あり', memo: o.memo.slice(f[0].length) } : o;
+}
+const fromStore = o => withCutN(fromServer(o));
+function paintCut() {
+  const row = $('#pCutRow');
+  if (!row) return;   // 前の版の画面
+  row.hidden = $('input[name="pCut"]:checked')?.value !== 'yes';
+  const n = clampQty($('#pCutN').value);
+  $('#pCutN').value = n;
+  $$('#phoneDlg [data-cq]').forEach(b => { b.disabled = Number(b.dataset.cq) < 0 ? n <= 1 : n >= QTY_MAX; });
+}
+$$('input[name="pCut"]').forEach(x => x.addEventListener('change', () => {
+  if (x.value === 'yes' && x.checked) $('#pCutN').value = Math.max(1, phoneMeals());   // はじめは食数
+  paintCut();
+  phoneErr('');
+}));
+$('#pCutN')?.addEventListener('change', paintCut);
+$('#phoneDlg').addEventListener('click', e => {
+  const b = e.target.closest('[data-cq]');
+  if (!b || b.disabled) return;
+  $('#pCutN').value = clampQty($('#pCutN').value) + Number(b.dataset.cq);
+  paintCut();
+});
 $('#phoneDlg').addEventListener('click', e => {
   const b = e.target.closest('[data-qty]');
   if (b && !b.disabled) { $('#pQty').value = clampQty($('#pQty').value) + Number(b.dataset.qty); return paintQty(); }
@@ -1001,7 +1037,11 @@ $('#pSend').addEventListener('click', async () => {
   if (!phone.lines.length) return phoneErr('品物を1つ以上入れてください（品物を選んで「＋ 入れる」）');
   if (!$('#pDay').value || !$('#pHm').value || isNaN(at)) return phoneErr('受け取りの日と時刻を選んでください');
   if (at < Date.now() - 5 * 60000) return phoneErr('受け取りの時刻が、もう過ぎています');
-  const row = { kind: 'pickup', asap: false, pickupAt: at.toISOString(), name, tel, route, note: $('#pNote').value.trim(),
+  // カトラリーのありなしは必ず選ぶ（2026-11-15 ko-dai さんの指示。公式アプリと同じ）。前の版の画面（カトラリーの欄が無い）のときは聞かない
+  const cut = $('input[name="pCut"]:checked')?.value;
+  if ($('#pCutSeg') && !cut) return phoneErr('カトラリー（お箸・スプーン）の「あり」か「なし」を選んでください');
+  const cutWord = cut === 'yes' ? `カトラリーあり（${clampQty($('#pCutN').value)}個）` : cut === 'no' ? 'カトラリーなし' : '';
+  const row = { kind: 'pickup', asap: false, pickupAt: at.toISOString(), name, tel, route, note: [cutWord, $('#pNote').value.trim()].filter(Boolean).join('／'),
     lines: phone.lines, meals: phoneMeals() };
   $('#pSend').disabled = true;
   const ok = await addPhoneOrder(row);
@@ -1022,7 +1062,7 @@ async function addPhoneOrder(row) {
   if (!ORDERS_ONLINE) {
     const now = new Date();
     const o = { id: 'o' + now.getTime(), no: nextOrderNo(now), date: dateKey(now), createdAt: now.toISOString(), status: 'accepted', ...row,
-      memo: row.note, total: row.lines.reduce((s, l) => s + l.unit * l.qty, 0), times: { accepted: now.toISOString() } };
+      ...withCutN({ memo: row.note }), total: row.lines.reduce((s, l) => s + l.unit * l.qty, 0), times: { accepted: now.toISOString() } };
     known?.set(o.id, o.status);   // 自分で入れた注文には「新しい」の印を付けない
     saveOrders([...getOrders(), o]);
     render();
@@ -1031,7 +1071,7 @@ async function addPhoneOrder(row) {
   net.gen++;
   try {
     const r = await staffPost({ action: 'saveOrder', row, rid: phone.rid });   // status を省くと accepted になる
-    const o = fromServer(r.row);
+    const o = fromStore(r.row);
     known?.set(o.id, o.status);
     put(o);
     // 前に送ったときに入っていて返事だけ届かなかったら、受け口は同じ rid の前の注文を返す（直した中身は入らない）。2026-11-05 の Codex のレビュー

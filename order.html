@@ -28,7 +28,7 @@
 <link rel="manifest" href="manifest-store.json">
 <link rel="icon" href="img/store-icon-192.png">
 <link rel="apple-touch-icon" href="img/store-apple-touch-icon.png">
-<link rel="stylesheet" href="css/store.css?v=69a3a0f4">
+<link rel="stylesheet" href="css/store.css?v=be56c082">
 </head>
 <body>
 <header class="s-top">
@@ -165,7 +165,17 @@
   </fieldset>
   <ul id="pLines" class="p-lines"></ul>
   <p class="f-total"><span>合計（店頭で支払い）</span><b id="pTotal">¥0</b></p>
-  <label class="f-field"><span>ご要望・メモ</span><textarea id="pNote" rows="2" maxlength="300"></textarea></label>
+  <!-- カトラリー（お箸・スプーン）のありなしと、ありのときの個数（2026-11-15 ko-dai さんの指示）。必ずどちらかを選ぶ（公式アプリの「お箸・スプーンの有無」と同じ）。
+       受け口には、ご要望の頭に「カトラリーあり（3個）」「カトラリーなし」と付けて送る（js/store.js の pSend・withCutN） -->
+  <div class="f-field"><span>カトラリー（お箸・スプーン）</span>
+    <div id="pCutSeg" class="seg">
+      <label><input type="radio" name="pCut" value="yes"><span>あり</span></label>
+      <label><input type="radio" name="pCut" value="no"><span>なし</span></label>
+    </div>
+    <div id="pCutRow" class="f-qty" hidden><span>個数</span><span class="qty-step"><button type="button" class="st-btn" data-cq="-1" aria-label="1つ減らす">−</button><input id="pCutN" type="number" min="1" max="99" value="1" inputmode="numeric" aria-label="カトラリーの個数"><button type="button" class="st-btn" data-cq="1" aria-label="1つ増やす">＋</button></span></div>
+  </div>
+  <!-- ご要望は280字まで（頭にカトラリーの字を付けても、受け口の300字に収まるように。2026-11-15） -->
+  <label class="f-field"><span>ご要望・メモ</span><textarea id="pNote" rows="2" maxlength="280"></textarea></label>
   <p id="pErr" class="dlg-err" hidden></p>
   <div class="dlg-btns"><button type="button" class="b-sub" data-close>やめる</button><button type="button" id="pSend" class="b-main">この注文を入れる</button></div>
 </dialog>
@@ -177,6 +187,6 @@
 <script src="https://t3dining.github.io/baguru-app/js/content.js?v=86d4c182"></script>
 <!-- 受け口とのやりとり（公式アプリと同じもの。切り替え ORDERS_ONLINE・受け口の場所・送り方）。公式アプリのセッションの持ち物 -->
 <script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=70c5663d"></script>
-<script src="js/store.js?v=2f72e346"></script>
+<script src="js/store.js?v=7042c635"></script>
 </body>
 </html>

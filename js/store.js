@@ -1012,7 +1012,27 @@ document.addEventListener('click', e => {   // 予約注文の窓とサブメニ
   $(`#pOpts [data-show="${CSS.escape(g.id)}"]`).textContent = n ? `${n}個（+${yen(ch.p * n)}）` : 'なし';
   $$(`#pOpts [data-for="${CSS.escape(g.id)}"]`).forEach(x => { x.disabled = Number(x.dataset.cnt) < 0 ? n <= 0 : n >= max || !!ch.soldOut; });
 });
-$$('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+/* 窓を閉じる（2026-11-15 ko-dai さんの指示「やめるを閉じるに変更し、まわりの余白部分を押しても閉じるように」）。
+   「閉じる」のボタンと、窓のまわりの暗いところを押したとき。★予約注文は、品物・お名前・電話・ご要望を入れかけているときだけ、
+   間違えて押して消えないよう「閉じますか？」と聞く（閉じると、次に開いたときは空から。Claude が足した） */
+const phoneDirty = () => !!phone && (phone.lines.length > 0 || ['#pName', '#pTel', '#pNote'].some(s => $(s)?.value.trim()));
+function closeDlg(d) {
+  if (!d?.open) return;
+  if (d.id === 'phoneDlg' && phoneDirty() && !confirm('入れかけの予約注文は消えます。閉じますか？')) return;
+  d.close();
+}
+$$('dialog [data-close]').forEach(b => b.addEventListener('click', () => closeDlg(b.closest('dialog'))));
+$$('dialog').forEach(d => {
+  // まわりの暗いところ（::backdrop）を押すと、窓そのものに届く。窓の中の余白を押したときは閉じない（押した所が窓の四角の外かで見る）
+  d.addEventListener('click', e => {
+    if (e.target !== d) return;
+    const r = d.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return;
+    closeDlg(d);
+  });
+  // キーボードの Esc も同じ（予約注文の入れかけは聞く）
+  d.addEventListener('cancel', e => { if (d.id === 'phoneDlg' && phoneDirty()) { e.preventDefault(); closeDlg(d); } });
+});
 
 /* ---------------------------------------------------------------------
  *  品切れの設定（2026-11-08 ko-dai さんの指示「アプリで品切れ設定ができるように」「公式アプリにもホームページにもテイクアウトページで反映されるように」

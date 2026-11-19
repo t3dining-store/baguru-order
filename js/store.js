@@ -1056,6 +1056,20 @@ $$('input[name="pCut"]').forEach(x => x.addEventListener('change', () => {
 }));
 $('#pCutN')?.addEventListener('change', paintCut);
 
+/* 予約注文の日時が、お店の営業日・営業時間の中か（2026-11-19 ko-dai さんの「モバイルオーダーは定休日が反映されていますか？」→「確かめを足す」）。
+   お客様のアプリ（../js/common.js の pickupSlots）と同じ決まり：休みの日（定休日の火曜。祝日は営業。T3Works で決めた臨時休業・臨時営業）は入れない、
+   受け取り・配達は、開ける時刻から閉める TAKEOUT.lastBeforeClose 分前まで。休みの日は、この画面が30分に1回読み直す T3Works の営業日（syncDays）を使う。
+   中なら ''、外ならそのわけ */
+function hoursIssue(at) {
+  const day = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+  const times = hoursOf(day);   // 休みの日は []
+  if (!times.length) return `${mdw(day)}は、お店の休みの日です（定休日・臨時休業）`;
+  const last = c => atTime(day, c).getTime() - TAKEOUT.lastBeforeClose * 60000;
+  if (times.some(([o, c]) => at.getTime() >= atTime(day, o).getTime() && at.getTime() <= last(c))) return '';
+  const range = times.map(([o, c]) => `${o}〜${hhmm(new Date(last(c)))}`).join('・');
+  return `${mdw(day)} ${hhmm(at)} は、受け取り・配達ができる時間（${range}。閉める${TAKEOUT.lastBeforeClose}分前まで）の外です`;
+}
+
 /* 店頭で受け取りか、配達か（2026-11-15 ko-dai さんの指示「予約注文タブで配達を選べるように」）。
    配達のときは、配達先（住所・会社名や建物名）と領収書の欄を出し、日時の名前を「配達の日」「配達時間」にする（時刻は配達が終わる時刻）。
    受け口には kind: 'delivery'・address・address2 で送る（受け口の saveOrder は前から受けられる。受け口は変えていない）。配達料は入れない */
@@ -1293,6 +1307,10 @@ $('#pSend').addEventListener('click', async () => {
   const row = { kind, asap: false, pickupAt: at.toISOString(), name, tel, route, note,
     ...(kind === 'delivery' ? { address: addr, address2: addr2, ...($('#pFeeSeg') ? { fee: feeChoice() === 'yes' ? feeNow() : 0 } : {}) } : {}),
     lines: phone.lines, meals: phoneMeals() };
+  // 休みの日・営業時間の外なら、入れる前に聞く（2026-11-19 ko-dai さんの「確かめを足す」。止めはしない：ケータリングなど、お店が決めた特別な注文もあるため。Claude が決めた）。
+  // 直すときに日時を変えていなければ聞かない
+  const why = hoursIssue(at);
+  if (why && !sameTime && !confirm(`${why}\n\nそれでも、この日時で入れますか？`)) return;
   if (phone.edit) {   // 直す：受け口の saveOrder に id と、開いたときの更新日時（ほかの端末が先に変えていたら conflict）
     const o = list().find(x => x.id === phone.edit.id);
     if (!o) return phoneErr('この注文が見つかりませんでした。「↻ 更新」を押して確かめてください。');

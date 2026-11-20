@@ -261,8 +261,15 @@ function unlockSound() {
 // タブレットで、音がオンなのに出せないあいだは、画面いっぱいに「画面をタッチしてください」を出す（触ると音が出せるようになる）。
 // スマホには出さない（前のように「音」のボタンで選ぶ）
 function checkSound() {
-  $('#soundGate').hidden = !(TABLET && soundOn && (!audio || audio.state !== 'running'));
+  $('#soundGate').hidden = !(TABLET && soundOn && (wakeTouch || !audio || audio.state !== 'running'));
 }
+/* 画面を消して（タブレットのスリープ）長くたってから戻ったときは、音が出せるように見えても「画面をタッチしてください」を出す（2026-11-20 ko-dai さんの指示
+   「営業後 iPad でアプリを立ち上げたまま画面だけ OFF にして翌日 ON にする。アプリを再度立ち上げなくても、受付の確認音が最初に流れるように」）。
+   ★iPad は、画面を消していたあと、触るまで音が出ないことがある（音を出せる様子は running のままでも）。画面のロックを外す操作は、この画面へのタッチに数えられない。
+   そのため、自動で鳴らすのでなく、触ってもらって音を出せるようにし、確認の音を1回鳴らす（soundOnNow）。少しだけほかのアプリを見て戻ったときは出さない */
+const WAKE_TOUCH_AFTER = 10 * 60000;   // これより長く画面が消えていたら、触ってもらう
+let hiddenAt = 0;
+let wakeTouch = false;   // 触って確認の音を鳴らすまで、「画面をタッチしてください」を出す
 
 function loadChime() {
   if (!audio) return Promise.resolve();
@@ -1433,6 +1440,7 @@ $('#pinHome').addEventListener('click', goOwner);   // 合言葉を入れずに�
 // 音をオンにして、試しに1回鳴らす（受付待ちがあれば、そのまま鳴り続ける）。押した・触ったその場で呼ぶ
 function soundOnNow() {
   soundOn = true;
+  wakeTouch = false;
   keepAwake();
   const ready = unlockSound();
   checkSound();
@@ -1450,6 +1458,9 @@ $('#sound').addEventListener('click', () => {
 $('#soundGate').addEventListener('click', soundOnNow);
 // タブレットを起こした・ほかのアプリから戻ったときは、音をもう一度出せるようにする（出せなければ「画面をタッチ」が出る）。注文も読み直す
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') hiddenAt = Date.now();
+  if (document.visibilityState === 'visible' && hiddenAt && Date.now() - hiddenAt >= WAKE_TOUCH_AFTER && TABLET && soundOn) wakeTouch = true;
+  if (document.visibilityState === 'visible') checkSound();   // 長く消えていたら、すぐ出す
   if (document.visibilityState === 'visible' && soundOn && audio) audio.resume().catch(() => {});
   if (document.visibilityState === 'visible') { pull(); refreshContent(); keepAwake(); }
   setTimeout(checkSound, 500);

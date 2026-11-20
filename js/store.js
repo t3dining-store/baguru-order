@@ -1368,6 +1368,19 @@ function sameSent(o, row) {
     && o.lines.map(lineKey).join('\n') === row.lines.map(lineKey).join('\n');
 }
 
+/* お店が入れた新しい注文（予約注文）も、受け口がオーナーへプッシュ通知を送る（受け口 2026-11-20c から。ko-dai さんの指示「オーナー以外から席の予約とテイクアウトの注文を直接入力した時もオーナーに通知が飛ぶように」。../プッシュ通知の決めごと.md）。
+   ★入れたこの端末には送らないよう、この端末が バグる Owner で通知を受けているときの endpoint を pushSkip として添える（受けていなければ空。空なら登録した全部の端末に送る）。
+   予約ボードと同じ取り方（予約ボードのセッションの頼み）。注文を進める・直す saveOrder には付けない（受け口がもともと送らない） */
+let pushSkip = '';
+function findPushSkip() {
+  if (!navigator.serviceWorker?.getRegistrations) return Promise.resolve();
+  return navigator.serviceWorker.getRegistrations().then(list => {
+    const reg = list.find(g => { try { return /\/(baguru-owner|バグるOwner)\/sw\.js$/.test(decodeURI((g.active || g.waiting || g.installing)?.scriptURL || '')); } catch (e) { return false; } });
+    return reg?.pushManager?.getSubscription();
+  }).then(sub => { pushSkip = sub?.endpoint || ''; }).catch(() => {});
+}
+findPushSkip();
+
 async function addPhoneOrder(row) {
   if (!ORDERS_ONLINE) {
     const now = new Date();
@@ -1380,7 +1393,8 @@ async function addPhoneOrder(row) {
   }
   net.gen++;
   try {
-    const r = await staffPost({ action: 'saveOrder', row, rid: phone.rid });   // status を省くと accepted になる
+    await Promise.race([findPushSkip(), new Promise(ok => setTimeout(ok, 1500))]);   // この端末が バグる Owner で通知を受けていれば、この端末には通知を送らない（下の pushSkip）。待つのは1.5秒まで
+    const r = await staffPost({ action: 'saveOrder', row, rid: phone.rid, ...(pushSkip ? { pushSkip } : {}) });   // status を省くと accepted になる
     const o = fromStore(r.row);
     known?.set(o.id, o.status);
     put(o);

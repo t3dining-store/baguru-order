@@ -775,6 +775,7 @@ function openPhone(o = null) {
   $('input[name="pRoute"]')?.closest('.seg')?.remove();   // 前の画面（電話か店頭かを選ぶ形）が、端末にまだ残っているとき
   // 受け取りの日と時刻は、はじめは空にして必ず選んでもらう（2026-11-04 ko-dai さんの指示。「できしだい」は外した）
   ['#pName', '#pTel', '#pNote', '#pDay', '#pHm'].forEach(s => { $(s).value = ''; });
+  paintHm('');
   $('#pDay').min = dateKey(new Date());
   $('#pTime').hidden = false;
   $('input[name="pWhen"]')?.closest('.seg')?.remove();   // 前の画面（「できしだい」の切り替えがあった形）が、端末にまだ残っているとき
@@ -799,6 +800,7 @@ function openPhone(o = null) {
     $('#pTel').value = o.tel || '';
     $('#pDay').value = dateKey(t);
     $('#pHm').value = hhmm(t);
+    paintHm();
     if ($('#pDay').value < $('#pDay').min) $('#pDay').min = $('#pDay').value;
     $('#pNote').value = o.memo || '';
     pick('pKind', o.kind === 'delivery' ? 'delivery' : 'pickup');
@@ -1055,6 +1057,26 @@ $$('input[name="pCut"]').forEach(x => x.addEventListener('change', () => {
   phoneErr('');
 }));
 $('#pCutN')?.addEventListener('change', paintCut);
+
+/* 予約注文の時刻は「時」と「分（00・05…55）」の2つの選ぶ欄（2026-11-20 ko-dai さんの指示「時刻が今1分刻みになっているので、5分刻みで選べるように」）。
+   iPad の時刻の欄（type=time）は step を使わず1分きざみになるため、選ぶ欄にした。選んだ時刻は見えない #pHm に "HH:MM" で入れる（ほかの所は今までどおり #pHm を読む）。
+   「時」だけ選んだら、分は 00 にする。直すときに5分きざみでない時刻（前に入れた注文）なら、その分も選べるように足す。前の版の画面（時刻の欄）のときは何もしない */
+function paintHm(v = $('#pHm').value) {
+  const hs = $('#pHmH'), ms = $('#pHmM');
+  if (!hs || !ms) return;
+  const [h, m] = /^\d{2}:\d{2}$/.test(v) ? v.split(':') : ['', ''];
+  const two = n => String(n).padStart(2, '0');
+  const mins = Array.from({ length: 12 }, (_, i) => two(i * 5));
+  if (m && !mins.includes(m)) { mins.push(m); mins.sort(); }
+  hs.innerHTML = '<option value="">時</option>' + Array.from({ length: 24 }, (_, i) => two(i)).map(x => `<option value="${x}" ${x === h ? 'selected' : ''}>${Number(x)}時</option>`).join('');
+  ms.innerHTML = '<option value="">分</option>' + mins.map(x => `<option value="${x}" ${x === m ? 'selected' : ''}>${x}分</option>`).join('');
+}
+function readHm() {
+  const h = $('#pHmH').value, m = $('#pHmM').value;
+  $('#pHm').value = h && m ? `${h}:${m}` : '';
+}
+$('#pHmH')?.addEventListener('change', () => { if ($('#pHmH').value && !$('#pHmM').value) $('#pHmM').value = '00'; readHm(); phoneErr(''); });
+$('#pHmM')?.addEventListener('change', () => { readHm(); phoneErr(''); });
 
 /* 予約注文の日時が、お店の営業日・営業時間の中か（2026-11-19 ko-dai さんの「モバイルオーダーは定休日が反映されていますか？」→「確かめを足す」）。
    お客様のアプリ（../js/common.js の pickupSlots）と同じ決まり：休みの日（定休日の火曜。祝日は営業。T3Works で決めた臨時休業・臨時営業）は入れない、

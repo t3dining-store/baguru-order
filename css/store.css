@@ -236,6 +236,10 @@ html, body, button, input, select, textarea, label, a, dialog, .seg span, .p-til
 #pDeliv[hidden] { display: none; }
 #pRcptSeg { margin-bottom: 8px; }
 #pFeeSeg { margin-bottom: 8px; }
+/* 予約注文の時刻：「時」と「分（5分きざみ）」（2026-11-20） */
+.hm-pick { display: flex; align-items: center; gap: 6px; }
+.dlg .hm-pick select { flex: 1; min-width: 0; }
+.hm-pick b { font-size: 18px; }
 #pFeeRow { margin-bottom: 12px; }
 .dlg .f-qty #pFeeN { width: 96px; }
 .fee-sum { margin: -6px 0 12px; text-align: right; color: #2f5fa3; font-weight: 700; }

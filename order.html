@@ -28,7 +28,7 @@
 <link rel="manifest" href="manifest-store.json">
 <link rel="icon" href="img/store-icon-192.png">
 <link rel="apple-touch-icon" href="img/store-apple-touch-icon.png">
-<link rel="stylesheet" href="css/store.css?v=e26b2696">
+<link rel="stylesheet" href="css/store.css?v=1821692c">
 </head>
 <body>
 <header class="s-top">
@@ -167,7 +167,12 @@
   <!-- 受け取りの日と時刻は、必ず選んでもらう（2026-11-04 ko-dai さんの指示。「できしだい」は外した。はじめは空） -->
   <div id="pTime" class="f-grid">
     <label class="f-field"><span id="pDayLbl">受け取りの日</span><input id="pDay" type="date"></label>
-    <label class="f-field"><span id="pHmLbl">時刻</span><input id="pHm" type="time" step="300"></label>
+    <!-- 時刻は「時」と「分（5分きざみ）」の2つの選ぶ欄（2026-11-20 ko-dai さんの指示。iPad の時刻の欄は step を使わず1分きざみになるため）。
+         選んだ時刻は見えない #pHm に "HH:MM" で入る（js/store.js の paintHm・readHm） -->
+    <div class="f-field"><span id="pHmLbl">時刻</span>
+      <span class="hm-pick"><select id="pHmH" aria-label="時"></select><b>:</b><select id="pHmM" aria-label="分"></select></span>
+      <input id="pHm" type="hidden">
+    </div>
   </div>
   <!-- 配達のときだけ（2026-11-15 ko-dai さんの指示）。配達先は、住所か会社名・建物名のどちらかを必ず入れる。領収書は必ず「あり」か「なし」を選ぶ。
        ありのときは宛名を入れるか「宛名は後日連絡」。領収書は、ご要望の頭に「領収書あり（宛名：○○）」などと付けて送る（js/store.js の pSend・withRcpt） -->
@@ -228,6 +233,6 @@
 <script src="https://t3dining.github.io/baguru-app/js/content.js?v=ead31ec2"></script>
 <!-- 受け口とのやりとり（公式アプリと同じもの。切り替え ORDERS_ONLINE・受け口の場所・送り方）。公式アプリのセッションの持ち物 -->
 <script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=493aea58"></script>
-<script src="js/store.js?v=5769db06"></script>
+<script src="js/store.js?v=63913b64"></script>
 </body>
 </html>

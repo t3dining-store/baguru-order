@@ -97,7 +97,8 @@ const STALE_AFTER = 60000;  // これだけ注文を読めていないと、わ�
 // orders：受け口の注文／accepting：受付中か／at：最後に読めた時刻／error：読めなかったわけ
 // gen：進めた回数。読んでいるあいだに進めたら、その読んだ答えは古いので使わない
 // quick：今日の、まだ来ていない即予約（受け口 2026-11-06a から。下の「即予約の知らせ」）
-const net = { orders: [], accepting: true, at: 0, error: '', gen: 0, loading: null, quick: [] };
+// rsv：今日入った、今日の、ネット（ホームページ・アプリ）からの予約（受け口 2026-11-22a から。下の「当日の予約の知らせ」）
+const net = { orders: [], accepting: true, at: 0, error: '', gen: 0, loading: null, quick: [], rsv: [] };
 const STAFF_MSG = {
   bad_pin: '合言葉が違います。',
   locked: '受け口が止まっています（合言葉を何度も間違えた人がいたため。10分で戻ります）。',
@@ -146,8 +147,9 @@ function take(r) {
   net.orders = (r.orders || []).map(fromStore);
   net.accepting = r.accepting !== false;
   net.quick = Array.isArray(r.quick) ? r.quick : [];   // 前の版の受け口には quick が無い。そのときは何も出さない
-  const added = quickNew().filter(q => !quickTold.has(q.id));
-  if (added.length) { added.forEach(q => quickTold.add(q.id)); ringNext = 'quick'; ring(false); }   // 新しい即予約は、このあとの render ですぐ鳴る
+  net.rsv = Array.isArray(r.rsvToday) ? r.rsvToday : [];   // 前の版の受け口には rsvToday が無い。そのときは何も出さない
+  const added = [...quickNew(), ...rsvNew()].filter(q => !quickTold.has(q.id));
+  if (added.length) { added.forEach(q => quickTold.add(q.id)); ringNext = 'quick'; ring(false); }   // 新しい即予約・当日の予約は、このあとの render ですぐ鳴る
   checkNew();
 }
 /** 受け口が返した1件を、画面の注文に入れる（無ければ足す） */
@@ -178,6 +180,7 @@ function askPin(msg = '') {
   pinSet('');
   net.orders = [];
   net.quick = [];
+  net.rsv = [];
   known = null;
   $('#pinGate').hidden = false;
   $('#pinErr').textContent = msg;
@@ -309,7 +312,8 @@ function beep(buf = chime, freq = 880) {
 // 即予約の音は、注文の音と同じく RING_EVERY ごと（2026-11-06 ko-dai さんの指示「確認を押すまでずっと鳴り続けるように」）。
 // 両方あるときは交互に鳴らす（どちらも聞こえるように）。新しく入ったほうを先に鳴らす（ringNext）
 let ringNext = '';
-const ringNeeds = () => [...(quickNew().length ? ['quick'] : []), ...(list().some(o => ['new', 'request'].includes(o.status)) ? ['order'] : [])];
+// 当日の予約も、即予約と同じ音（'quick'。2026-11-22 ko-dai さんの指示）
+const ringNeeds = () => [...(quickNew().length || rsvNew().length ? ['quick'] : []), ...(list().some(o => ['new', 'request'].includes(o.status)) ? ['order'] : [])];
 function ringTick() {
   if (Date.now() < quietUntil) return;   // 取り消しの音の途中
   const need = ringNeeds();
@@ -524,6 +528,7 @@ function render() {
   checkCook(all);
   ringCancel();
   paintQuick();
+  paintRsv();
   paintSold();
   const byTime = (a, b) => a.pickupAt.localeCompare(b.pickupAt);
   for (const col of $$('.col')) {
@@ -549,9 +554,10 @@ function render() {
   $('.s-accept').classList.toggle('off', !accepting);
   // 受付待ちの注文と、返事をしていない申請があるあいだは鳴らし続ける
   const waiting = all.filter(o => ['new', 'request'].includes(o.status)).length;
-  const quickN = quickNew().length;
+  const quickN = quickNew().length + rsvNew().length;
   ring(soundOn && (waiting > 0 || quickN > 0));
-  const stops = [waiting > 0 && '受け付ける・申請に返事をする', quickN > 0 && '即予約の「確認」を押す'].filter(Boolean).join('・');
+  const askWhat = [quickNew().length && '即予約', rsvNew().length && '当日の予約'].filter(Boolean).join('・');
+  const stops = [waiting > 0 && '受け付ける・申請に返事をする', quickN > 0 && `${askWhat}の「確認」を押す`].filter(Boolean).join('・');
   $('#sound').textContent = !soundOn ? '🔕 音：オフ（押すとオン）' : ringTimer ? `🔔 鳴っています（${stops}と止まります）` : '🔔 音：オン';
   $('#sound').classList.toggle('on', soundOn);
   $('#sound').classList.toggle('warn', !soundOn && (waiting > 0 || quickN > 0));
@@ -627,11 +633,40 @@ function sendQuickSeen() {
     .then(r => {
       ids.forEach(id => quickTodo.delete(id));
       const done = Array.isArray(r.quickSeen) ? r.quickSeen : ids;
-      net.quick.forEach(q => { if (done.includes(q.id)) q.seen = true; });
+      [...net.quick, ...net.rsv].forEach(q => { if (q && done.includes(q.id)) q.seen = true; });
     })
     .catch(e => { if (!['no_answer', 'offline', 'not_ready', 'locked'].includes(e?.code)) ids.forEach(id => quickTodo.delete(id)); })   // 受け口が断った（形が違うなど）ときは、送り直さない
     .finally(() => { quickSending = false; render(); });
 }
+
+/* ---------------------------------------------------------------------
+ *  当日の予約の知らせ（2026-11-22 ko-dai さんの指示「当日の予約が入った場合も受付アプリで表示されるようにして音で知らせてください／即予約と同じ音で大丈夫です」。
+ *  予約ボードのセッションに頼まれた。ko-dai さんが選んだ：知らせるのはネットからの当日の予約だけ（ホームページ・アプリから入った今日の予約。承認待ちのリクエストも。
+ *  お店で入れた予約は鳴らさない）・音は「確認」を押すまで鳴る）
+ *  ・受け口（2026-11-22a から）の orders の答えの rsvToday（今日入った今日のネットの予約。リクエストと来店待ちだけ。即予約は quick のほうに出るので入らない）。
+ *    seen が false のものがあるあいだ、即予約の帯の下に紫の帯を出し、即予約と同じ音（ring の 'quick'）を鳴らす
+ *  ・「確認」は即予約と同じ quickSeen（同じ quickMine・quickTodo）。どこか1台で押せば全部の端末で止まる
+ *  ・承認・お断りは予約ボードの「予約受付」でする（Order受付は知らせるだけ）
+ * --------------------------------------------------------------------- */
+const rsvNew = () => net.rsv.filter(r => r && !r.seen && !quickMine.has(r.id));
+function paintRsv() {
+  const bar = $('#rsvBar');
+  if (!bar) return;   // 前の版の order.html が残っているとき
+  const n = rsvNew();
+  bar.hidden = !n.length;
+  if (!n.length) return;
+  const r = n[0], req = n.filter(x => x.status === 'リクエスト').length;
+  const seats = Array.isArray(r.tables) && r.tables.length ? `（${r.tables.join('・')}）` : '';
+  $('#rsvText').textContent = `当日の予約が入りました：${r.start} ${r.people}名 ${quickName(r)}様${seats}${r.dessert ? '・デザートプレート' : ''}${n.length > 1 ? ` 他${n.length - 1}件` : ''}`;
+  $('#rsvSub').textContent = req
+    ? `承認待ちのリクエストが${req}件あります。承認・お断りは予約ボードの「予約受付」でしてください（${r.route || 'ネット'}から）`
+    : `承認済みの予約（来店待ち）です。席・来店・取り消しは予約ボードで（${r.route || 'ネット'}から）`;
+}
+$('#rsvOk')?.addEventListener('click', () => {
+  rsvNew().forEach(r => { quickMine.add(r.id); quickTodo.add(r.id); });
+  render();
+  sendQuickSeen();
+});
 
 $('#quickOk')?.addEventListener('click', () => {
   quickNew().forEach(q => { quickMine.add(q.id); quickTodo.add(q.id); });

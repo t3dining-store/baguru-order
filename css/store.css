@@ -67,6 +67,10 @@ html, body, button, input, select, textarea, label, a, dialog, .seg span, .p-til
 .qb-text b { font-size: 18px; }
 .qb-text small { font-size: 12px; color: #fde9d3; }
 .quick-bar button { flex: none; min-width: 96px; height: 48px; padding: 0 18px; border-radius: 24px; background: #fff; color: #b5661c; font-size: 18px; font-weight: 800; }
+/* ネットからの当日の予約（2026-11-22）。即予約（オレンジ）と見分けられるよう紫 */
+.quick-bar.rsv-bar { background: #6a4bb5; box-shadow: 0 0 0 3px #cbb8f0; }
+.rsv-bar .qb-mark, .rsv-bar button { color: #6a4bb5; }
+.rsv-bar .qb-text small { color: #ece4ff; }
 
 /* 音を出せないあいだの「画面をタッチしてください」（画面いっぱい。どこを触っても音がオンになる。下のボタンは押されない） */
 .sound-gate {

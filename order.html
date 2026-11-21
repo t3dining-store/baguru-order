@@ -28,7 +28,7 @@
 <link rel="manifest" href="manifest-store.json">
 <link rel="icon" href="img/store-icon-192.png">
 <link rel="apple-touch-icon" href="img/store-apple-touch-icon.png">
-<link rel="stylesheet" href="css/store.css?v=1821692c">
+<link rel="stylesheet" href="css/store.css?v=92ddc1eb">
 </head>
 <body>
 <header class="s-top">
@@ -51,6 +51,13 @@
     <span class="qb-mark" aria-hidden="true">即</span>
     <span class="qb-text"><b id="quickText"></b><small>確定済みのネット予約です。席・来店・取り消しは予約ボードで</small></span>
     <button type="button" id="quickOk">確認</button>
+  </div>
+  <!-- ネットからの当日の予約が入った知らせ（2026-11-22 ko-dai さんの指示「当日の予約が入った場合も受付アプリで表示されるようにして音で知らせてください／即予約と同じ音で大丈夫です」）。
+       即予約の帯の下に、紫の帯で出す。音・「確認」・どこか1台で押せば全部の端末で止まるのは、即予約と同じ。文は js/store.js の paintRsv が書く -->
+  <div id="rsvBar" class="quick-bar rsv-bar" role="alert" hidden>
+    <span class="qb-mark" aria-hidden="true">予</span>
+    <span class="qb-text"><b id="rsvText"></b><small id="rsvSub"></small></span>
+    <button type="button" id="rsvOk">確認</button>
   </div>
 </header>
 <!-- 試作か、受け口から注文を読めているか（読めないときは赤くなる）。文は js/store.js の paintNet が書く -->
@@ -234,6 +241,6 @@
 <script src="https://t3dining.github.io/baguru-app/js/content.js?v=ead31ec2"></script>
 <!-- 受け口とのやりとり（公式アプリと同じもの。切り替え ORDERS_ONLINE・受け口の場所・送り方）。公式アプリのセッションの持ち物 -->
 <script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=493aea58"></script>
-<script src="js/store.js?v=6fa163c6"></script>
+<script src="js/store.js?v=f1ae7256"></script>
 </body>
 </html>

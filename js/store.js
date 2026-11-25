@@ -29,7 +29,12 @@ const backOf = o => o.status === 'accepted' && appRequest(o) ? 'request' : BACK[
 const nextLabel = o => o.kind === 'delivery' && o.status === 'ready' ? 'お届け済み' : NEXT[o.status]?.label;
 // 受け付けた・承認したが、まだ調理を始める前（受け取り・お届けの TAKEOUT.cookBefore 分前まで）の注文は「受付済み」に置く。その時刻を過ぎると「調理中」に移る。
 // 「できしだい」は、受け付けたらすぐ調理中。見分けは common.js の isBooked（お客さまの画面の「受付済み」と同じ。2026-10-30 ko-dai さん）
-const who = o => o.name ? `${o.name} 様` : 'お名前なし';   // 店頭の注文は、お名前を聞かないことがある
+// お客様名は、フリガナ（kana）があればカタカナで、姓と名のあいだに半角スペース（2026-11-25 ko-dai さんの指示「予約ボードや受付アプリではお客様名をカタカナで姓名の間にスペースを入れて表示するように」。
+// 公式アプリのセッションに頼まれた）。公式アプリが注文に kana（会員のフリガナ「セイ メイ」）を付けて送り、受け口がお店の画面の答えに入れる。
+// kana が無い注文（前の注文・予約注文・受け口が前の版のとき）は、今までどおり漢字のお名前。ひらがなはカタカナに、全角スペースは半角にそろえる
+const kataName = k => String(k || '').replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)).replace(/[\s　]+/g, ' ').trim();
+const custName = o => kataName(o.kana) || o.name || '';
+const who = o => custName(o) ? `${custName(o)} 様` : 'お名前なし';   // 店頭の注文は、お名前を聞かないことがある
 
 // バグる Owner（フォルダーアプリ。../バグるOwner/）から開いたとき（?from=owner）だけ、上の帯と合言葉の画面に「🏠 ホーム」を出す
 // （2026-10-30 ko-dai さんの指示。フォルダーアプリのセッションに頼まれた）。印はこのタブの sessionStorage にも残し、「↻ 更新」のあとも出し続ける。
@@ -610,7 +615,7 @@ let quickSending = false;
 
 const quickNew = () => net.quick.filter(q => q && !q.seen && !quickMine.has(q.id));
 // お名前は、フリガナがあればカタカナで（予約ボードの帯と同じ）
-const quickName = q => String(q.kana || '').replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)).trim() || q.name || 'お名前なし';
+const quickName = q => kataName(q.kana) || q.name || 'お名前なし';   // 上の kataName（2026-11-25 から全角スペースも半角に）
 
 /** 上の帯。例「即予約が入りました：18:30までに来店 2名 ミホン様（A1）他1件」。いちばん早く来るお客さまを出す（受け口が来店時刻の順に返す） */
 function paintQuick() {

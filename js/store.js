@@ -822,6 +822,7 @@ function openPhone(o = null) {
   $('input[name="pRoute"]')?.closest('.seg')?.remove();   // 前の画面（電話か店頭かを選ぶ形）が、端末にまだ残っているとき
   // 受け取りの日と時刻は、はじめは空にして必ず選んでもらう（2026-11-04 ko-dai さんの指示。「できしだい」は外した）
   ['#pName', '#pTel', '#pNote', '#pDay', '#pHm'].forEach(s => { $(s).value = ''; });
+  ['#pKanaSei', '#pKanaMei'].forEach(s => { if ($(s)) $(s).value = ''; });   // フリガナ（2026-11-25。前の版の画面には無い）
   paintHm('');
   $('#pDay').min = dateKey(new Date());
   $('#pTime').hidden = false;
@@ -844,6 +845,7 @@ function openPhone(o = null) {
   if (o) {   // 直すとき：今の内容を入れる
     const t = new Date(o.pickupAt), pick = (name, v) => { const x = $(`input[name="${name}"][value="${v}"]`); if (x) x.checked = true; };
     $('#pName').value = o.name || '';
+    if ($('#pKanaSei')) { const [sei = '', ...mei] = kataName(o.kana).split(' '); $('#pKanaSei').value = sei; $('#pKanaMei').value = mei.join(''); }
     $('#pTel').value = o.tel || '';
     $('#pDay').value = dateKey(t);
     $('#pHm').value = hhmm(t);
@@ -1201,10 +1203,19 @@ document.addEventListener('click', e => {   // 予約注文の窓とサブメニ
   $(`#pOpts [data-show="${CSS.escape(g.id)}"]`).textContent = n ? `${n}個（+${yen(ch.p * n)}）` : 'なし';
   $$(`#pOpts [data-for="${CSS.escape(g.id)}"]`).forEach(x => { x.disabled = Number(x.dataset.cnt) < 0 ? n <= 0 : n >= max || !!ch.soldOut; });
 });
+/** 予約注文のフリガナ（セイ・メイ）を「セイ メイ」にする。空なら ''。カタカナ・ひらがな・「ー」のほかが入っていたら null（受け口の kanaOf_ と同じ決まり） */
+function kanaInput() {
+  if (!$('#pKanaSei')) return '';
+  const part = s => kataName(s).replace(/ /g, '');
+  const sei = part($('#pKanaSei').value), mei = part($('#pKanaMei').value);
+  if (![sei, mei].every(x => /^[\u30a1-\u30f6\u30fc]*$/.test(x))) return null;
+  return [sei, mei].filter(Boolean).join(' ');
+}
+
 /* 窓を閉じる（2026-11-15 ko-dai さんの指示「やめるを閉じるに変更し、まわりの余白部分を押しても閉じるように」）。
    「閉じる」のボタンと、窓のまわりの暗いところを押したとき。★予約注文は、品物・お名前・電話・ご要望を入れかけているときだけ、
    間違えて押して消えないよう「閉じますか？」と聞く（閉じると、次に開いたときは空から。Claude が足した） */
-const phoneDirty = () => !!phone && (phone.lines.length > 0 || ['#pName', '#pTel', '#pNote', '#pAddr', '#pAddr2', '#pRcptTo'].some(s => $(s)?.value.trim()));
+const phoneDirty = () => !!phone && (phone.lines.length > 0 || ['#pName', '#pTel', '#pKanaSei', '#pKanaMei', '#pNote', '#pAddr', '#pAddr2', '#pRcptTo'].some(s => $(s)?.value.trim()));
 function closeDlg(d) {
   if (!d?.open) return;
   if (d.id === 'phoneDlg' && !phone?.edit && phoneDirty() && !confirm('入れかけの予約注文は消えます。閉じますか？')) return;   // 直しているときは聞かない（閉じても注文は元のまま）
@@ -1344,6 +1355,9 @@ $('#pSend').addEventListener('click', async () => {
   const at = new Date(`${$('#pDay').value}T${$('#pHm').value}`);
   const tel = $('#pTel').value.trim();
   if (!name) return phoneErr('お名前を入れてください');
+  // フリガナ（2026-11-25 ko-dai さんの「フリガナ欄を足す」）。入れなくてもよい。ひらがなはカタカナに直す。カタカナ・ひらがな・「ー」のほかが入っていたら知らせる
+  const kana = kanaInput();
+  if (kana === null) return phoneErr('フリガナは、カタカナかひらがなで入れてください');
   // 電話番号は必ず入れる（2026-11-04 ko-dai さんの指示）。けた数は公式アプリと同じ（10〜11けた）
   if (!tel) return phoneErr('電話番号を入れてください');
   // 受け口の telOk_ と同じ形（0 で始まる10〜11けた）。違うと、送ってから受け口に断られる（2026-11-05 の Codex のレビュー）
@@ -1373,7 +1387,7 @@ $('#pSend').addEventListener('click', async () => {
   const cutWord = cut === 'yes' ? `カトラリーあり（${clampQty($('#pCutN').value)}個）` : cut === 'no' ? 'カトラリーなし' : '';
   const note = [cutWord, rcptWord, $('#pNote').value.trim()].filter(Boolean).join('／');
   if (note.length > 300) return phoneErr(`ご要望・メモが長すぎます（領収書の宛名などと合わせて300字まで。あと${note.length - 300}字短くしてください）`);
-  const row = { kind, asap: false, pickupAt: at.toISOString(), name, tel, route, note,
+  const row = { kind, asap: false, pickupAt: at.toISOString(), name, tel, route, note, ...($('#pKanaSei') ? { kana } : {}),
     ...(kind === 'delivery' ? { address: addr, address2: addr2, ...($('#pFeeSeg') ? { fee: feeChoice() === 'yes' ? feeNow() : 0 } : {}) } : {}),
     lines: phone.lines, meals: phoneMeals() };
   // 休みの日・営業時間の外なら、入れる前に聞く（2026-11-19 ko-dai さんの「確かめを足す」。止めはしない：ケータリングなど、お店が決めた特別な注文もあるため。Claude が決めた）。
@@ -1384,7 +1398,7 @@ $('#pSend').addEventListener('click', async () => {
     const o = list().find(x => x.id === phone.edit.id);
     if (!o) return phoneErr('この注文が見つかりませんでした。「↻ 更新」を押して確かめてください。');
     const deliv = kind === 'delivery';
-    const patch = { kind, pickupAt: row.pickupAt, name, tel, note, lines: row.lines.map(({ tile, ...l }) => l), meals: row.meals,
+    const patch = { kind, pickupAt: row.pickupAt, name, tel, note, ...($('#pKanaSei') ? { kana } : {}), lines: row.lines.map(({ tile, ...l }) => l), meals: row.meals,
       address: deliv ? addr : '', address2: deliv ? addr2 : '', fee: deliv ? (row.fee ?? null) : null,
       ...(ORDERS_ONLINE ? {} : withRcpt(withCutN({ memo: note }))) };   // 試作は、この端末の注文をそのまま直す
     $('#pSend').disabled = true;

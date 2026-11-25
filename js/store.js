@@ -33,7 +33,10 @@ const nextLabel = o => o.kind === 'delivery' && o.status === 'ready' ? 'お届�
 // 公式アプリのセッションに頼まれた）。公式アプリが注文に kana（会員のフリガナ「セイ メイ」）を付けて送り、受け口がお店の画面の答えに入れる。
 // kana が無い注文（前の注文・予約注文・受け口が前の版のとき）は、今までどおり漢字のお名前。ひらがなはカタカナに、全角スペースは半角にそろえる
 const kataName = k => String(k || '').replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)).replace(/[\s　]+/g, ' ').trim();
-const custName = o => kataName(o.kana) || o.name || '';
+// お客様のお名前は、フリガナ（カタカナ「セイ メイ」）を先に。フリガナが無くても、お名前がひらがな・カタカナだけならカタカナにして出す（2026-11-25 ko-dai さんの指示
+// 「アプリ、ホームページ、店舗で直接入力全ての場合でフルネームがカタカナで姓名の間にスペース」）。漢字のお名前はそのまま（読みがわからないため）
+const kanaOnlyName = s => /^[\u3041-\u3096\u30a1-\u30f6\u30fc\s\u3000]+$/.test(String(s || '').trim());
+const custName = o => kataName(o.kana) || (kanaOnlyName(o.name) ? kataName(o.name) : o.name || '');
 const who = o => custName(o) ? `${custName(o)} 様` : 'お名前なし';   // 店頭の注文は、お名前を聞かないことがある
 
 // バグる Owner（フォルダーアプリ。../バグるOwner/）から開いたとき（?from=owner）だけ、上の帯と合言葉の画面に「🏠 ホーム」を出す
@@ -615,7 +618,7 @@ let quickSending = false;
 
 const quickNew = () => net.quick.filter(q => q && !q.seen && !quickMine.has(q.id));
 // お名前は、フリガナがあればカタカナで（予約ボードの帯と同じ）
-const quickName = q => kataName(q.kana) || q.name || 'お名前なし';   // 上の kataName（2026-11-25 から全角スペースも半角に）
+const quickName = q => custName(q) || 'お名前なし';   // 上の kataName（2026-11-25 から全角スペースも半角に）
 
 /** 上の帯。例「即予約が入りました：18:30までに来店 2名 ミホン様（A1）他1件」。いちばん早く来るお客さまを出す（受け口が来店時刻の順に返す） */
 function paintQuick() {
@@ -821,8 +824,8 @@ function openPhone(o = null) {
     edit: o ? { id: o.id, updatedAt: o.updatedAt, pickupAt: o.pickupAt } : null };
   $('input[name="pRoute"]')?.closest('.seg')?.remove();   // 前の画面（電話か店頭かを選ぶ形）が、端末にまだ残っているとき
   // 受け取りの日と時刻は、はじめは空にして必ず選んでもらう（2026-11-04 ko-dai さんの指示。「できしだい」は外した）
-  ['#pName', '#pTel', '#pNote', '#pDay', '#pHm'].forEach(s => { $(s).value = ''; });
-  ['#pKanaSei', '#pKanaMei'].forEach(s => { if ($(s)) $(s).value = ''; });   // フリガナ（2026-11-25。前の版の画面には無い）
+  ['#pName', '#pKanaSei', '#pKanaMei', '#pTel', '#pNote', '#pDay', '#pHm'].forEach(s => { if ($(s)) $(s).value = ''; });   // #pName は 2026-11-25 まで（前の版の画面）
+  if ($('#pKanaWas')) $('#pKanaWas').hidden = true;
   paintHm('');
   $('#pDay').min = dateKey(new Date());
   $('#pTime').hidden = false;
@@ -844,8 +847,14 @@ function openPhone(o = null) {
   paintKind();
   if (o) {   // 直すとき：今の内容を入れる
     const t = new Date(o.pickupAt), pick = (name, v) => { const x = $(`input[name="${name}"][value="${v}"]`); if (x) x.checked = true; };
-    $('#pName').value = o.name || '';
-    if ($('#pKanaSei')) { const [sei = '', ...mei] = kataName(o.kana).split(' '); $('#pKanaSei').value = sei; $('#pKanaMei').value = mei.join(''); }
+    if ($('#pName')) $('#pName').value = o.name || '';   // 前の版の画面
+    if ($('#pKanaSei')) {
+      // フリガナを2欄に。フリガナが無くても、お名前がかな・カタカナだけならそれを使う。漢字のお名前だけの注文（2026-11-25 より前に入れたもの）は、前のお名前を出して入れてもらう
+      const k = kataName(o.kana) || (kanaOnlyName(o.name) ? kataName(o.name) : '');
+      const [sei = '', ...mei] = k.split(' ');
+      $('#pKanaSei').value = sei; $('#pKanaMei').value = mei.join('');
+      if ($('#pKanaWas') && !k && o.name) { $('#pKanaWas').textContent = `前のお名前：${o.name} 様。フリガナ（セイ・メイ）を入れてください。`; $('#pKanaWas').hidden = false; }
+    }
     $('#pTel').value = o.tel || '';
     $('#pDay').value = dateKey(t);
     $('#pHm').value = hhmm(t);
@@ -1203,19 +1212,16 @@ document.addEventListener('click', e => {   // 予約注文の窓とサブメニ
   $(`#pOpts [data-show="${CSS.escape(g.id)}"]`).textContent = n ? `${n}個（+${yen(ch.p * n)}）` : 'なし';
   $$(`#pOpts [data-for="${CSS.escape(g.id)}"]`).forEach(x => { x.disabled = Number(x.dataset.cnt) < 0 ? n <= 0 : n >= max || !!ch.soldOut; });
 });
-/** 予約注文のフリガナ（セイ・メイ）を「セイ メイ」にする。空なら ''。カタカナ・ひらがな・「ー」のほかが入っていたら null（受け口の kanaOf_ と同じ決まり） */
-function kanaInput() {
-  if (!$('#pKanaSei')) return '';
-  const part = s => kataName(s).replace(/ /g, '');
-  const sei = part($('#pKanaSei').value), mei = part($('#pKanaMei').value);
-  if (![sei, mei].every(x => /^[\u30a1-\u30f6\u30fc]*$/.test(x))) return null;
-  return [sei, mei].filter(Boolean).join(' ');
+/** 予約注文のフリガナ（セイ・メイ）を [セイ, メイ] で返す。ひらがな・半角カナはカタカナに、空白は取る（形の確かめは pSend。受け口の kanaOf_ と同じ決まり） */
+function kanaParts() {
+  const part = s => kataName(String(s || '').normalize('NFKC')).replace(/ /g, '');
+  return [part($('#pKanaSei')?.value), part($('#pKanaMei')?.value)];
 }
 
 /* 窓を閉じる（2026-11-15 ko-dai さんの指示「やめるを閉じるに変更し、まわりの余白部分を押しても閉じるように」）。
    「閉じる」のボタンと、窓のまわりの暗いところを押したとき。★予約注文は、品物・お名前・電話・ご要望を入れかけているときだけ、
    間違えて押して消えないよう「閉じますか？」と聞く（閉じると、次に開いたときは空から。Claude が足した） */
-const phoneDirty = () => !!phone && (phone.lines.length > 0 || ['#pName', '#pTel', '#pKanaSei', '#pKanaMei', '#pNote', '#pAddr', '#pAddr2', '#pRcptTo'].some(s => $(s)?.value.trim()));
+const phoneDirty = () => !!phone && (phone.lines.length > 0 || ['#pName', '#pKanaSei', '#pTel', '#pKanaMei', '#pNote', '#pAddr', '#pAddr2', '#pRcptTo'].some(s => $(s)?.value.trim()));
 function closeDlg(d) {
   if (!d?.open) return;
   if (d.id === 'phoneDlg' && !phone?.edit && phoneDirty() && !confirm('入れかけの予約注文は消えます。閉じますか？')) return;   // 直しているときは聞かない（閉じても注文は元のまま）
@@ -1351,13 +1357,21 @@ function soldCheck(o) {
 $('#pSend').addEventListener('click', async () => {
   // 経路は「予約」だけ（2026-11-04 ko-dai さんの指示。電話か店頭かの選択は外した）。カードに「予約」の札が付く
   const route = '予約';
-  const name = $('#pName').value.trim();
   const at = new Date(`${$('#pDay').value}T${$('#pHm').value}`);
   const tel = $('#pTel').value.trim();
-  if (!name) return phoneErr('お名前を入れてください');
-  // フリガナ（2026-11-25 ko-dai さんの「フリガナ欄を足す」）。入れなくてもよい。ひらがなはカタカナに直す。カタカナ・ひらがな・「ー」のほかが入っていたら知らせる
-  const kana = kanaInput();
-  if (kana === null) return phoneErr('フリガナは、カタカナかひらがなで入れてください');
+  // お名前はフリガナ（セイ・メイ）だけ。2つとも必ず入れる（2026-11-25 ko-dai さんの指示「お名前の欄は削除し、フリガナを一番上に」「フルネームがカタカナで姓名の間にスペース」）。
+  // name と kana の両方に「セイ メイ」を送る（受け口はお名前が無いと断るため。予約ボードもカタカナで出る）。前の版の画面（お名前の欄だけ）のときは、今までどおり
+  let name, kana;
+  if ($('#pKanaSei')) {
+    const [sei, mei] = kanaParts();
+    if (!sei) return phoneErr('フリガナ（セイ）を入れてください');
+    if (!mei) return phoneErr('フリガナ（メイ）を入れてください');
+    if (!/^[\u30a1-\u30f6\u30fc]+$/.test(sei + mei)) return phoneErr('フリガナは、カタカナかひらがなで入れてください');
+    name = kana = `${sei} ${mei}`;
+  } else {
+    name = $('#pName')?.value.trim() || '';
+    if (!name) return phoneErr('お名前を入れてください');
+  }
   // 電話番号は必ず入れる（2026-11-04 ko-dai さんの指示）。けた数は公式アプリと同じ（10〜11けた）
   if (!tel) return phoneErr('電話番号を入れてください');
   // 受け口の telOk_ と同じ形（0 で始まる10〜11けた）。違うと、送ってから受け口に断られる（2026-11-05 の Codex のレビュー）
@@ -1387,7 +1401,7 @@ $('#pSend').addEventListener('click', async () => {
   const cutWord = cut === 'yes' ? `カトラリーあり（${clampQty($('#pCutN').value)}個）` : cut === 'no' ? 'カトラリーなし' : '';
   const note = [cutWord, rcptWord, $('#pNote').value.trim()].filter(Boolean).join('／');
   if (note.length > 300) return phoneErr(`ご要望・メモが長すぎます（領収書の宛名などと合わせて300字まで。あと${note.length - 300}字短くしてください）`);
-  const row = { kind, asap: false, pickupAt: at.toISOString(), name, tel, route, note, ...($('#pKanaSei') ? { kana } : {}),
+  const row = { kind, asap: false, pickupAt: at.toISOString(), name, tel, route, note, ...(kana ? { kana } : {}),
     ...(kind === 'delivery' ? { address: addr, address2: addr2, ...($('#pFeeSeg') ? { fee: feeChoice() === 'yes' ? feeNow() : 0 } : {}) } : {}),
     lines: phone.lines, meals: phoneMeals() };
   // 休みの日・営業時間の外なら、入れる前に聞く（2026-11-19 ko-dai さんの「確かめを足す」。止めはしない：ケータリングなど、お店が決めた特別な注文もあるため。Claude が決めた）。
@@ -1398,7 +1412,7 @@ $('#pSend').addEventListener('click', async () => {
     const o = list().find(x => x.id === phone.edit.id);
     if (!o) return phoneErr('この注文が見つかりませんでした。「↻ 更新」を押して確かめてください。');
     const deliv = kind === 'delivery';
-    const patch = { kind, pickupAt: row.pickupAt, name, tel, note, ...($('#pKanaSei') ? { kana } : {}), lines: row.lines.map(({ tile, ...l }) => l), meals: row.meals,
+    const patch = { kind, pickupAt: row.pickupAt, name, tel, note, ...(kana ? { kana } : {}), lines: row.lines.map(({ tile, ...l }) => l), meals: row.meals,
       address: deliv ? addr : '', address2: deliv ? addr2 : '', fee: deliv ? (row.fee ?? null) : null,
       ...(ORDERS_ONLINE ? {} : withRcpt(withCutN({ memo: note }))) };   // 試作は、この端末の注文をそのまま直す
     $('#pSend').disabled = true;

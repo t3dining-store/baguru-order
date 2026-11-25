@@ -163,20 +163,21 @@
 <!-- 予約注文を入れる（2026-11-04 に「電話・店頭の注文」から名前を変え、電話か店頭かの選択を外した。ko-dai さんの指示）。受け付けた形で入り、お客様のアプリには出ない -->
 <dialog id="phoneDlg" class="dlg wide p-dlg">
   <h3 id="pTitle">予約注文を入れる</h3>   <!-- 「✎ 内容を直す」で開いたときは「予約注文を直す」（js/store.js の openPhone） -->
+  <!-- お客様のお名前は、フリガナ（セイ・メイ）だけ。いちばん上（2026-11-25 ko-dai さんの指示「お名前の欄は削除し、フリガナ（セイ）とフリガナ（メイ）を一番上に」。
+       その前は「お名前」の欄があり、フリガナはその下で、入れなくてもよかった）。2つとも必ず入れる。ひらがな・半角カナで入れてもカタカナに直す。
+       受け口には name と kana の両方に「セイ メイ」（半角の空白）で送る。カードには「トヨタ タロウ 様」と出る（js/store.js の pSend・kanaParts） -->
+  <div class="f-grid">
+    <label class="f-field"><span>フリガナ（セイ）</span><input id="pKanaSei" maxlength="20" autocomplete="off" placeholder="例：トヨタ"></label>
+    <label class="f-field"><span>フリガナ（メイ）</span><input id="pKanaMei" maxlength="20" autocomplete="off" placeholder="例：タロウ"></label>
+  </div>
+  <p id="pKanaWas" class="f-note" hidden></p>   <!-- フリガナの無い前の注文を直すとき、前のお名前を出す（js/store.js の openPhone） -->
   <!-- 店頭で受け取りか、配達か（2026-11-15 ko-dai さんの指示「予約注文タブで配達を選べるように」）。配達のときは、配達先・領収書の欄が出て、日時は「配達の日」「配達時間」になる -->
   <div id="pKindSeg" class="seg">
     <label><input type="radio" name="pKind" value="pickup" checked><span>店頭で受け取り</span></label>
     <label><input type="radio" name="pKind" value="delivery"><span>🚚 配達</span></label>
   </div>
   <div class="f-grid">
-    <label class="f-field"><span>お名前</span><input id="pName" maxlength="40" autocomplete="off"></label>
     <label class="f-field"><span>電話番号</span><input id="pTel" type="tel" inputmode="tel" maxlength="20" autocomplete="off"></label>
-  </div>
-  <!-- フリガナ（2026-11-25 ko-dai さんの「フリガナ欄を足す」）。セイ・メイの2つ。入れるとカードに「トヨタ タロウ 様」とカタカナで出る（入れなければ漢字のお名前）。
-       ひらがなで入れてもカタカナに直す。受け口には kana（「セイ メイ」）で送る（js/store.js の pSend・kanaInput） -->
-  <div class="f-grid">
-    <label class="f-field"><span>フリガナ（セイ）</span><input id="pKanaSei" maxlength="20" autocomplete="off" placeholder="例：トヨタ"></label>
-    <label class="f-field"><span>フリガナ（メイ）</span><input id="pKanaMei" maxlength="20" autocomplete="off" placeholder="例：タロウ"></label>
   </div>
   <!-- 受け取りの日と時刻は、必ず選んでもらう（2026-11-04 ko-dai さんの指示。「できしだい」は外した。はじめは空） -->
   <div id="pTime" class="f-grid">
@@ -246,7 +247,7 @@
 <!-- バグるマネージで直した値段・売り切れを重ねる（公式アプリと同じもの。公式アプリのセッションの持ち物。予約注文の窓で使う） -->
 <script src="https://t3dining.github.io/baguru-app/js/content.js?v=ead31ec2"></script>
 <!-- 受け口とのやりとり（公式アプリと同じもの。切り替え ORDERS_ONLINE・受け口の場所・送り方）。公式アプリのセッションの持ち物 -->
-<script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=127504ed"></script>
-<script src="js/store.js?v=3960a9d2"></script>
+<script src="https://t3dining.github.io/baguru-app/js/order-api.js?v=d649f9d1"></script>
+<script src="js/store.js?v=a7aab0b2"></script>
 </body>
 </html>
